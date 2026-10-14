@@ -3,6 +3,9 @@ import { Game } from './Game';
 import { createPlatform } from './systems/PlatformAdapter';
 import { SaveManager } from './systems/SaveManager';
 import { createDefaultSave, type SaveData } from './core/state';
+import * as THREE from 'three';
+import * as models from './world/models';
+import * as avatar from './world/avatar';
 
 async function boot() {
   const bootEl = document.getElementById('boot')!;
@@ -48,6 +51,7 @@ async function boot() {
   if (saves.locked) game.ui.saveStatus(null);
   bootEl.remove();
   (window as any).__game = import.meta.env.DEV || location.search.includes('debug') ? game : undefined;
+  if (import.meta.env.DEV || location.search.includes('debug')) (window as any).__dev = { models, avatar, THREE };
 }
 
 boot().catch((e) => {

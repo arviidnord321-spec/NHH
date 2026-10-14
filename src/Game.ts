@@ -47,6 +47,8 @@ export class Game {
   player!: PlayerController;
   cam!: CameraController;
   pets!: PetFollowers;
+  /** dev/capture hook: runs right before each render (e.g. cinematic cameras) */
+  onBeforeRender: (() => void) | null = null;
   life!: Life;
   private talkT = 0;
   private talkWho = '';
@@ -287,7 +289,7 @@ export class Game {
     if (this.fps.t >= 0.5) { this.fps.value = this.fps.frames / this.fps.t; this.fps.frames = 0; this.fps.t = 0; }
     // a very long gap (tab asleep, debugger) is skipped rather than simulated; held
     // keys are kept — real focus loss is handled by the blur/visibility listeners
-    if (dt > 2) dt = 0;
+    if (dt > 2 || dt < 0) dt = 0;
     // hitches are caught up with extra fixed sub-steps (up to 1/4 s) instead of
     // running the game in slow motion
     dt = Math.min(dt, 0.25);
@@ -310,6 +312,7 @@ export class Game {
     this.player.rig.root.visible = !this.cam.tooClose;
     this.updateViewmodel(dt);
     this.audio.update(dt);
+    this.onBeforeRender?.();
     this.renderer.render(this.world.scene, this.cam.camera);
     this.ui.frame(dt);
     if (this.s.settings.showFps) this.ui.setDebug(this.debugText());

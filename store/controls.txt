@@ -1,0 +1,14 @@
+WASD or Arrow keys = Move
+Mouse = Look around (click the game to capture the mouse, Esc to release)
+Left mouse button (hold) = Dig
+Space = Jump
+Shift = Sprint
+E = Interact / hold to uncover treasure
+Q = Echo Scan
+1-4 = Select tool (shovel, pickaxe, lantern, scanner)
+P = Pets
+C = Avatar designer
+R = Return to camp
+Esc = Settings / close menus
+
+Mobile: left stick to move, drag the right side to look, and use the on-screen Dig, Jump, Scan and Use buttons.
