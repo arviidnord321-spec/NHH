@@ -171,12 +171,52 @@ export class Game {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     this.ui.updateAll();
+    await this.warmUp();
     this.platform.loadingStop();
     this.setPause('boot', false);
     // resume an interrupted hatch reveal (already paid & rolled — never re-rolled)
     if (this.s.pendingHatch) this.playPendingHatch();
     this.persist();
+    this.last = performance.now();
     requestAnimationFrame(() => this.frame());
+  }
+
+  /**
+   * Compile every shader and draw every area once while the loading screen is
+   * still up, so the first seconds of play don't stutter (which used to make
+   * movement feel slow right after starting).
+   */
+  private async warmUp() {
+    const groups = Object.values(this.world.biomeGroups);
+    const prevVis = groups.map((g) => g.visible);
+    groups.forEach((g) => (g.visible = true));
+    const sprites: THREE.Sprite[] = [];
+    this.world.scene.traverse((o) => { if ((o as THREE.Sprite).isSprite) { sprites.push(o as THREE.Sprite); o.layers.set(0); } });
+    // make the one-off effect meshes visible so their programs compile too
+    const effects = [this.outline, this.crack, this.scanRing];
+    const prevFx = effects.map((e) => e.visible);
+    effects.forEach((e) => (e.visible = true));
+    this.particles.sparkle(this.player.pos.clone().add(new THREE.Vector3(0, 1, 2)), '#ffffff', 4);
+    this.particles.chipsBurst(this.player.pos.clone().add(new THREE.Vector3(0, 1, 2)), new THREE.Vector3(0, 1, 0), '#ffffff', 4);
+    this.particles.puff(this.player.pos.clone().add(new THREE.Vector3(0, 1, 2)), '#ffffff', 2);
+    this.particles.update(0.001);
+    const cam = this.cam.camera;
+    try {
+      const r = this.renderer as THREE.WebGLRenderer & { compileAsync?: (s: THREE.Object3D, c: THREE.Camera) => Promise<unknown> };
+      if (r.compileAsync) await r.compileAsync(this.world.scene, cam);
+      else r.compile(this.world.scene, cam);
+    } catch { /* fall back to compiling on first draw */ }
+    // draw once looking in each direction so shadow passes and textures upload too
+    const saved = cam.quaternion.clone();
+    for (let i = 0; i < 4; i++) {
+      cam.rotation.set(-0.2, (i * Math.PI) / 2, 0);
+      cam.updateMatrixWorld();
+      this.renderer.render(this.world.scene, cam);
+    }
+    cam.quaternion.copy(saved);
+    groups.forEach((g, i) => (g.visible = prevVis[i]));
+    effects.forEach((e, i) => (e.visible = prevFx[i]));
+    await new Promise((res) => requestAnimationFrame(() => res(null)));
   }
 
   private buildHelpers() {
@@ -245,8 +285,12 @@ export class Game {
     this.fps.frames++;
     this.fps.t += Math.min(dt, 2);
     if (this.fps.t >= 0.5) { this.fps.value = this.fps.frames / this.fps.t; this.fps.frames = 0; this.fps.t = 0; }
-    if (dt > 2) { this.input.releaseAll(); dt = 0; } // long suspension: no catch-up burst
-    dt = Math.min(dt, 0.1);
+    // a very long gap (tab asleep, debugger) is skipped rather than simulated; held
+    // keys are kept — real focus loss is handled by the blur/visibility listeners
+    if (dt > 2) dt = 0;
+    // hitches are caught up with extra fixed sub-steps (up to 1/4 s) instead of
+    // running the game in slow motion
+    dt = Math.min(dt, 0.25);
     this.input.poll();
     if (this.running) {
       // bounded sub-steps keep simulation identical across refresh rates
