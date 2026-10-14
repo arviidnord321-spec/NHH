@@ -107,11 +107,12 @@ export class AudioManager {
     const c = this.ctx!;
     if (!this.musicIn) this.buildMusicChain();
     if (this.nextStepTime < c.currentTime) this.nextStepTime = c.currentTime + 0.05;
-    while (this.nextStepTime < c.currentTime + 0.25) {
-      this.musicStepAt(this.musicStep, this.nextStepTime);
-      // swung 8ths at ~76 BPM
-      const eighth = 60 / 76 / 2;
-      this.nextStepTime += this.musicStep % 2 === 0 ? eighth * 1.16 : eighth * 0.84;
+    const song = this.song();
+    const s16 = 60 / song.bpm / 4;
+    while (this.nextStepTime < c.currentTime + 0.2) {
+      this.funkStep(this.musicStep, this.nextStepTime, s16);
+      // swung 16ths
+      this.nextStepTime += this.musicStep % 2 === 0 ? s16 * 1.12 : s16 * 0.88;
       this.musicStep++;
     }
     this.birdTimer -= dt;
@@ -122,83 +123,111 @@ export class AudioManager {
     }
   }
 
-  // ───────── lo-fi music ─────────
+  // ───────── funky soundtrack ─────────
   private musicIn: GainNode | null = null;
+  private pump: GainNode | null = null;
+  private delayIn: GainNode | null = null;
+  private wahFilter: BiquadFilterNode | null = null;
   private nextStepTime = 0;
 
-  /** music bus → warm low-pass → dry + small generated-impulse reverb; plus faint vinyl crackle */
+  /** music → pump (sidechain duck) → glue filter → dry + reverb; separate ping-pong delay send */
   private buildMusicChain() {
     const c = this.ctx!;
     const input = c.createGain();
-    const warm = c.createBiquadFilter();
-    warm.type = 'lowpass';
-    warm.frequency.value = 2600;
-    warm.Q.value = 0.4;
-    input.connect(warm);
-    warm.connect(this.musicBus);
-    const len = Math.floor(c.sampleRate * 2.4);
+    const pump = c.createGain();
+    const glue = c.createBiquadFilter();
+    glue.type = 'lowpass';
+    glue.frequency.value = 9000;
+    input.connect(pump).connect(glue).connect(this.musicBus);
+    // short plate-ish reverb
+    const len = Math.floor(c.sampleRate * 1.6);
     const ir = c.createBuffer(2, len, c.sampleRate);
     for (let ch = 0; ch < 2; ch++) {
       const d = ir.getChannelData(ch);
-      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.5);
     }
     const verb = c.createConvolver();
     verb.buffer = ir;
     const wet = c.createGain();
-    wet.gain.value = 0.32;
-    warm.connect(verb).connect(wet).connect(this.musicBus);
-    // vinyl crackle: sparse clicks through a band-pass
-    const cl = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
-    const cd = cl.getChannelData(0);
-    for (let i = 0; i < cd.length; i++) cd[i] = Math.random() < 0.0009 ? (Math.random() * 2 - 1) * 0.8 : (Math.random() * 2 - 1) * 0.012;
-    const crackle = c.createBufferSource();
-    crackle.buffer = cl;
-    crackle.loop = true;
-    const bp = c.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 3200;
-    const cg = c.createGain();
-    cg.gain.value = 0.18;
-    crackle.connect(bp).connect(cg).connect(this.musicBus);
-    crackle.start();
+    wet.gain.value = 0.22;
+    glue.connect(verb).connect(wet).connect(this.musicBus);
+    // ping-pong delay send (dotted 8th)
+    const dIn = c.createGain();
+    const dl = c.createDelay(1.5), dr = c.createDelay(1.5);
+    const fb = c.createGain();
+    fb.gain.value = 0.38;
+    const dTone = c.createBiquadFilter();
+    dTone.type = 'bandpass';
+    dTone.frequency.value = 1800;
+    dTone.Q.value = 0.6;
+    const pl = c.createStereoPanner(), pr = c.createStereoPanner();
+    pl.pan.value = -0.7; pr.pan.value = 0.7;
+    dIn.connect(dTone).connect(dl);
+    dl.connect(pl).connect(this.musicBus);
+    dl.connect(dr);
+    dr.connect(pr).connect(this.musicBus);
+    dr.connect(fb).connect(dl);
+    this.delayIn = dIn;
+    // auto-wah shared by the clav stabs
+    const wah = c.createBiquadFilter();
+    wah.type = 'bandpass';
+    wah.Q.value = 4;
+    wah.frequency.value = 900;
+    const wahLfo = c.createOscillator();
+    wahLfo.frequency.value = 2.2;
+    const wahDepth = c.createGain();
+    wahDepth.gain.value = 650;
+    wahLfo.connect(wahDepth).connect(wah.frequency);
+    wahLfo.start();
+    wah.connect(input);
+    this.wahFilter = wah;
     this.musicIn = input;
+    this.pump = pump;
   }
 
-  private static readonly PROG: Record<string, { root: number; chords: number[][]; scale: number[] }> = {
-    // semitone offsets from root; 4 bars of 7th chords
-    meadow: { root: 57, chords: [[5, 9, 12, 16], [4, 7, 11, 14], [2, 5, 9, 12], [0, 4, 7, 11]], scale: [0, 2, 4, 7, 9] },
-    crystal: { root: 55, chords: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [8, 12, 15, 19]], scale: [0, 3, 5, 7, 10] },
-    ember: { root: 52, chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [-2, 2, 5, 9], [-5, -1, 2, 5]], scale: [0, 3, 5, 7, 10] },
-    aurora: { root: 59, chords: [[0, 4, 7, 11], [9, 12, 16, 19], [5, 9, 12, 16], [7, 11, 14, 17]], scale: [0, 2, 4, 7, 9] },
+  private static readonly SONGS: Record<string, { bpm: number; root: number; chords: number[][]; bass: number[]; hook: number[] }> = {
+    // chords: 4 bars of stab voicings (semitones from root); bass: 16-step riff (scale degrees in semitones, -99 = rest)
+    meadow: { bpm: 104, root: 45, chords: [[7, 10, 14, 17], [5, 9, 12, 16], [7, 10, 14, 17], [2, 5, 9, 12]], bass: [0, -99, 12, 0, -99, 10, -99, 12, 0, -99, 7, -99, 10, 12, -99, 3], hook: [12, -99, 15, 17, -99, 15, 12, -99, 10, 12, -99, -99, 7, -99, 10, -99] },
+    crystal: { bpm: 98, root: 43, chords: [[3, 7, 10, 14], [5, 8, 12, 15], [3, 7, 10, 14], [-2, 2, 5, 9]], bass: [0, -99, 0, 12, -99, 10, 7, -99, 0, -99, 12, -99, 10, -99, 7, 5], hook: [19, -99, 17, 15, -99, 14, -99, 15, 12, -99, -99, 10, 12, -99, -99, -99] },
+    ember: { bpm: 112, root: 40, chords: [[7, 10, 13, 17], [5, 8, 12, 15], [3, 7, 10, 13], [5, 8, 12, 15]], bass: [0, 0, -99, 12, -99, 0, 10, -99, 0, -99, 7, 8, -99, 10, -99, 12], hook: [12, 13, -99, 12, 10, -99, 7, -99, 12, -99, 15, -99, 13, 12, -99, -99] },
+    aurora: { bpm: 96, root: 47, chords: [[4, 7, 11, 14], [2, 5, 9, 12], [0, 4, 7, 11], [2, 5, 9, 12]], bass: [0, -99, -99, 7, -99, 12, -99, 7, 0, -99, -99, 5, -99, 7, 9, -99], hook: [16, -99, 14, -99, 11, -99, 14, 16, -99, -99, 19, -99, 16, -99, 14, -99] },
   };
-
+  private song() { return AudioManager.SONGS[this.biome] ?? AudioManager.SONGS.meadow; }
   private midi(n: number) { return 440 * Math.pow(2, (n - 69) / 12); }
 
-  private musicStepAt(step: number, t: number) {
-    const P = AudioManager.PROG[this.biome] ?? AudioManager.PROG.meadow;
-    const bar = Math.floor(step / 8) % 4;
-    const pos = step % 8;
-    const chord = P.chords[bar];
-    const base = P.root - 12;
-    if (pos === 0) {
-      // soft electric-piano chord, gently strummed
-      chord.forEach((n, i) => this.keys(this.midi(base + 12 + n), t + i * 0.025, 3.0, 0.05));
-      this.bass(this.midi(base - 12 + chord[0]), t, 1.4, 0.16);
-    }
-    if (pos === 4) {
-      this.bass(this.midi(base - 12 + chord[0] + (bar % 2 ? 7 : 0)), t, 1.0, 0.12);
-      if (Math.random() < 0.5) chord.slice(1).forEach((n, i) => this.keys(this.midi(base + 12 + n), t + i * 0.03, 1.6, 0.03));
-    }
-    // drums: kick on 1 & 3, brush on 2 & 4, quiet hats
-    if (pos === 0 || pos === 4 || (pos === 7 && Math.random() < 0.25)) this.kick(t, pos === 7 ? 0.25 : 0.42);
-    if (pos === 2 || pos === 6) this.brush(t, 0.14);
-    this.hat(t, pos % 2 ? 0.035 : 0.055);
-    // sparse pentatonic melody with an echo
-    if ((pos === 1 || pos === 3 || pos === 6) && Math.random() < 0.38) {
-      const deg = P.scale[Math.floor(Math.random() * P.scale.length)];
-      const f = this.midi(P.root + 12 + deg + (Math.random() < 0.3 ? 12 : 0));
-      this.lead(f, t, 0.045);
-      this.lead(f, t + 0.395 * 1.5, 0.018);
+  private funkStep(step: number, t: number, s16: number) {
+    const S = this.song();
+    const pos = step % 16;
+    const bar = Math.floor(step / 16);
+    const phrase = bar % 8;
+    const chord = S.chords[bar % 4];
+    const fill = phrase === 7 && pos >= 12;
+    // ── drums
+    const kickPat = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0];
+    if (kickPat[pos] || (pos === 15 && bar % 2 === 1)) { this.kick(t, 0.5); this.duck(t); }
+    if (pos === 4 || pos === 12) { this.snare(t, 0.28); this.clap(t + 0.004, 0.16); }
+    if ((pos === 7 || pos === 9 || pos === 14) && Math.random() < 0.55) this.snare(t, 0.06);
+    if (fill && pos % 1 === 0) this.snare(t, 0.08 + (pos - 12) * 0.05);
+    const hatVol = pos % 4 === 2 ? 0.07 : pos % 2 ? 0.03 : 0.045;
+    if (pos === 6 || pos === 14) this.hat(t, 0.06, 0.22); else this.hat(t, hatVol, 0.04);
+    if (pos % 2 === 1) this.shaker(t, 0.025);
+    if (phrase === 0 && pos === 0 && step > 0) this.crash(t, 0.16);
+    if (phrase === 7 && pos === 0) this.riser(t, s16 * 16);
+    // ── slap synth bass
+    const bn = S.bass[pos];
+    if (bn !== -99 && !(fill && pos > 13)) this.funkBass(this.midi(S.root - 12 + chord[0] - 7 + bn), t, s16 * (S.bass[(pos + 1) % 16] === -99 ? 1.6 : 0.9), bn >= 12 ? 0.22 : 0.26);
+    // ── clav stabs on the off-beats
+    if (pos === 2 || pos === 7 || pos === 10 || (pos === 15 && bar % 2 === 0)) chord.forEach((n) => this.clav(this.midi(S.root + 12 + n), t, s16 * 0.9, 0.035));
+    // ── warm pad on bar starts
+    if (pos === 0) chord.forEach((n, i) => this.pad(this.midi(S.root + 12 + n), t + i * 0.01, s16 * 15, 0.018));
+    // ── lead hook: plays on bars 3-4 and 7 of each phrase, answered by the delay
+    const hookBar = phrase === 2 || phrase === 3 || phrase === 6;
+    const hn = S.hook[pos];
+    if (hookBar && hn !== -99) this.lead(this.midi(S.root + 24 + hn), t, s16 * 1.8, 0.055);
+    // ── sparkle arps in the breakdown bars
+    if ((phrase === 4 || phrase === 5) && pos % 2 === 0) {
+      const n = chord[(pos / 2) % chord.length];
+      this.pluck(this.midi(S.root + 24 + n + (pos >= 8 ? 12 : 0)), t, 0.028);
     }
   }
 
@@ -208,66 +237,137 @@ export class AudioManager {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   }
 
-  private keys(f: number, t: number, dur: number, vol: number) {
-    const c = this.ctx!;
-    const g = c.createGain();
-    this.env(g, t, 0.012, vol, dur);
-    const o1 = c.createOscillator(); o1.type = 'sine'; o1.frequency.value = f;
-    const o2 = c.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 2.001;
-    const g2 = c.createGain(); g2.gain.value = 0.18;
-    const trem = c.createOscillator(); trem.frequency.value = 4.5;
-    const tg = c.createGain(); tg.gain.value = vol * 0.25;
-    trem.connect(tg).connect(g.gain);
-    o1.connect(g); o2.connect(g2).connect(g);
-    g.connect(this.musicIn!);
-    for (const o of [o1, o2, trem]) { o.start(t); o.stop(t + dur + 0.05); }
+  /** sidechain-style pump on every kick */
+  private duck(t: number) {
+    const g = this.pump!.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(0.55, t);
+    g.linearRampToValueAtTime(1, t + 0.18);
   }
 
-  private bass(f: number, t: number, dur: number, vol: number) {
+  private funkBass(f: number, t: number, dur: number, vol: number) {
     const c = this.ctx!;
+    const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+    const sub = c.createOscillator(); sub.type = 'sine'; sub.frequency.value = f;
+    const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.Q.value = 9;
+    fl.frequency.setValueAtTime(2400, t);
+    fl.frequency.exponentialRampToValueAtTime(260, t + 0.12);
     const g = c.createGain();
-    this.env(g, t, 0.02, vol, dur);
-    const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f;
-    o.connect(g).connect(this.musicIn!);
+    this.env(g, t, 0.004, vol, dur);
+    const sg = c.createGain(); sg.gain.value = 0.9;
+    o.connect(fl).connect(g);
+    sub.connect(sg).connect(g);
+    g.connect(this.musicIn!);
+    for (const x of [o, sub]) { x.start(t); x.stop(t + dur + 0.05); }
+  }
+
+  private clav(f: number, t: number, dur: number, vol: number) {
+    const c = this.ctx!;
+    const o = c.createOscillator(); o.type = 'square'; o.frequency.value = f;
+    const g = c.createGain();
+    this.env(g, t, 0.003, vol, dur);
+    o.connect(g).connect(this.wahFilter!);
     o.start(t); o.stop(t + dur + 0.05);
   }
 
-  private lead(f: number, t: number, vol: number) {
+  private pad(f: number, t: number, dur: number, vol: number) {
     const c = this.ctx!;
     const g = c.createGain();
-    this.env(g, t, 0.01, vol, 0.9);
-    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-    const vib = c.createOscillator(); vib.frequency.value = 5;
-    const vg = c.createGain(); vg.gain.value = f * 0.004;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.3);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    for (const det of [-7, 7]) {
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = det;
+      const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 1400;
+      o.connect(fl).connect(g);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    g.connect(this.musicIn!);
+  }
+
+  private lead(f: number, t: number, dur: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.008, vol, dur + 0.15);
+    const o = c.createOscillator(); o.type = 'square'; o.frequency.value = f;
+    const o2 = c.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 2;
+    const g2 = c.createGain(); g2.gain.value = 0.35;
+    const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 3200;
+    const vib = c.createOscillator(); vib.frequency.value = 5.5;
+    const vg = c.createGain(); vg.gain.value = f * 0.006;
     vib.connect(vg).connect(o.frequency);
+    // little pitch scoop into each note
+    o.frequency.setValueAtTime(f * 0.94, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+    o.connect(fl); o2.connect(g2).connect(fl);
+    fl.connect(g);
+    g.connect(this.musicIn!);
+    const send = c.createGain(); send.gain.value = 0.6;
+    g.connect(send).connect(this.delayIn!);
+    for (const x of [o, o2, vib]) { x.start(t); x.stop(t + dur + 0.2); }
+  }
+
+  private pluck(f: number, t: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.002, vol, 0.35);
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
     o.connect(g).connect(this.musicIn!);
-    for (const x of [o, vib]) { x.start(t); x.stop(t + 1); }
+    const send = c.createGain(); send.gain.value = 0.8;
+    g.connect(send).connect(this.delayIn!);
+    o.start(t); o.stop(t + 0.4);
   }
 
   private kick(t: number, vol: number) {
     const c = this.ctx!;
     const g = c.createGain();
-    this.env(g, t, 0.004, vol, 0.32);
+    this.env(g, t, 0.002, vol, 0.3);
     const o = c.createOscillator(); o.type = 'sine';
-    o.frequency.setValueAtTime(110, t);
-    o.frequency.exponentialRampToValueAtTime(44, t + 0.18);
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(48, t + 0.12);
     o.connect(g).connect(this.musicIn!);
-    o.start(t); o.stop(t + 0.35);
+    o.start(t); o.stop(t + 0.32);
   }
 
-  private noiseHit(t: number, vol: number, dur: number, type: BiquadFilterType, freq: number) {
+  private noiseHit(t: number, vol: number, dur: number, type: BiquadFilterType, freq: number, q = 0.8) {
     const c = this.ctx!;
     const src = c.createBufferSource();
     src.buffer = this.noiseBuf;
-    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
     const g = c.createGain();
-    this.env(g, t, 0.006, vol, dur);
+    this.env(g, t, 0.002, vol, dur);
     src.connect(f).connect(g).connect(this.musicIn!);
     src.start(t, Math.random() * 0.5);
     src.stop(t + dur + 0.02);
   }
-  private brush(t: number, vol: number) { this.noiseHit(t, vol, 0.22, 'bandpass', 1900); }
-  private hat(t: number, vol: number) { this.noiseHit(t, vol, 0.05, 'highpass', 7500); }
+  private snare(t: number, vol: number) {
+    this.noiseHit(t, vol, 0.16, 'bandpass', 1800, 0.7);
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.002, vol * 0.5, 0.09);
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+    o.connect(g).connect(this.musicIn!);
+    o.start(t); o.stop(t + 0.1);
+  }
+  private clap(t: number, vol: number) { for (let i = 0; i < 3; i++) this.noiseHit(t + i * 0.011, vol * (i === 2 ? 1 : 0.6), i === 2 ? 0.14 : 0.02, 'bandpass', 1300, 1.4); }
+  private hat(t: number, vol: number, dur: number) { this.noiseHit(t, vol, dur, 'highpass', 8000); }
+  private shaker(t: number, vol: number) { this.noiseHit(t, vol, 0.05, 'bandpass', 6000, 1.2); }
+  private crash(t: number, vol: number) { this.noiseHit(t, vol, 1.4, 'highpass', 5000, 0.4); }
+  private riser(t: number, dur: number) {
+    const c = this.ctx!;
+    const src = c.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(400, t);
+    f.frequency.exponentialRampToValueAtTime(7000, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.06, t + dur);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    src.connect(f).connect(g).connect(this.musicIn!);
+    src.start(t); src.stop(t + dur + 0.1);
+  }
 
   private chirp() {
     const c = this.ctx!;

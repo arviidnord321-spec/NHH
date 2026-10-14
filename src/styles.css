@@ -370,3 +370,26 @@ body.reduced-motion *, body.reduced-motion *::before { animation-duration: 1ms !
 .compass-track span.mark { font-size: 18px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.3)); }
 .compass-track span.mark.scan { color: #0e9e90; font-size: 22px; }
 .compass-tick { position: absolute; left: 50%; top: -2px; margin-left: -7px; border: 7px solid transparent; border-top: 9px solid #e23a26; }
+
+/* ───── NPC speech bubble ───── */
+.npc-bubble { position: absolute; left: 0; top: 0; max-width: 300px; padding: 8px 14px 10px; border-radius: 20px; background: #fffef8; color: var(--ink); border: 4px solid var(--ink); box-shadow: 0 5px 0 rgba(42,36,64,.3); font-family: var(--font-body); font-weight: 600; font-size: 16px; line-height: 1.25; text-align: center; transform-origin: 50% 100%; pointer-events: none; will-change: transform; }
+.npc-bubble b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 15px; color: #2563d4; }
+.npc-bubble::after { content: ''; position: absolute; left: 50%; bottom: -16px; margin-left: -11px; border: 11px solid transparent; border-top: 13px solid var(--ink); border-bottom: 0; }
+.npc-bubble.pop { animation: bubblePop .35s cubic-bezier(.34,1.56,.64,1); }
+@keyframes bubblePop { from { opacity: 0; margin-top: 14px; } }
+
+/* ───── Lively idle animations ───── */
+.confetti { position: absolute; width: 10px; height: 14px; border-radius: 2px; pointer-events: none; }
+.side-list > *:nth-child(1) img { animation: idleBob 3.2s ease-in-out infinite; }
+.side-list > *:nth-child(2) img { animation: idleBob 3.2s ease-in-out .4s infinite; }
+.side-list > *:nth-child(3) img { animation: idleBob 3.2s ease-in-out .8s infinite; }
+.side-list > *:nth-child(4) img { animation: idleBob 3.2s ease-in-out 1.2s infinite; }
+.side-list > *:nth-child(5) img { animation: idleBob 3.2s ease-in-out 1.6s infinite; }
+.side-list > .bubble-btn:nth-child(6) { animation: idleBob 3.2s ease-in-out 2s infinite; }
+.side-list > *:hover img, .side-list > .bubble-btn:hover { animation: none; }
+@keyframes idleBob { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-3px) rotate(-1deg); } }
+.camp-btn.urgent { animation: urgent 1s ease-in-out infinite; }
+@keyframes urgent { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); filter: drop-shadow(0 0 14px #ffe27a) drop-shadow(0 5px 0 rgba(42,36,64,.28)); } }
+.qprog { animation: badgeBreath 2.6s ease-in-out infinite; }
+@keyframes badgeBreath { 50% { transform: scale(1.06); } }
+body.reduced-motion .side-list img, body.reduced-motion .camp-btn.urgent, body.reduced-motion .qprog { animation: none !important; }

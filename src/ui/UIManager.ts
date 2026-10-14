@@ -131,6 +131,7 @@ export class UIManager {
       <div class="target-card hidden" id="target" style="background-image:url(${A.targetCard})"><b id="tname"></b><div class="hp"><i id="thp"></i></div><small id="tsub"></small></div>
       <div class="hint hidden" id="hint"></div>
       <div class="crosshair hidden" id="crosshair"></div>
+      <div class="npc-bubble hidden" id="npcbubble"><b id="npcname"></b><span id="npctext"></span></div>
       <div class="banner hidden" id="banner"></div>
       <div class="toasts" id="toasts" aria-live="polite"></div>
       <div class="floaters" id="floaters"></div>
@@ -174,6 +175,7 @@ export class UIManager {
     this.els.bagtext.textContent = `${n} / ${cap}`;
     this.els.bagfill.style.width = `${Math.min(100, (n / cap) * 100)}%`;
     this.els.bagbar.classList.toggle('full', n >= cap);
+    this.els.campbtn.classList.toggle('urgent', n >= cap);
     const q = L.currentQuest(s);
     if (q) {
       this.els.qtext.textContent = q.text;
@@ -301,6 +303,22 @@ export class UIManager {
     }
   }
 
+  npcBubble(b: { name: string; text: string; pos: THREE.Vector3 } | null) {
+    const el = this.els.npcbubble;
+    if (!b) { el.classList.add('hidden'); return; }
+    const p = this.g.projectToScreen(b.pos);
+    if (!p.visible) { el.classList.add('hidden'); return; }
+    if (el.classList.contains('hidden') || this.els.npctext.textContent !== b.text) {
+      this.els.npcname.textContent = b.name;
+      this.els.npctext.textContent = b.text;
+      el.classList.remove('hidden', 'pop');
+      void el.offsetWidth;
+      el.classList.add('pop');
+    }
+    const y = Math.max(p.y, 300 * this.hudZoom);
+    el.style.transform = `translate(${p.x}px, ${y}px) translate(-50%, -100%) scale(${this.hudZoom})`;
+  }
+
   setFirstPerson(fp: boolean) {
     this.updateHint();
     this.els.crosshair.classList.toggle('hidden', !fp);
@@ -401,6 +419,31 @@ export class UIManager {
         { transform: `translate(${dx}px, ${dy}px) scale(0.7)`, opacity: 1 },
       ], { duration: 750, delay, easing: 'cubic-bezier(.5,0,.6,1)', fill: 'forwards' });
       setTimeout(() => { c.remove(); if (i === n - 1) this.els.coins.parentElement!.classList.add('bump'); setTimeout(() => this.els.coins.parentElement!.classList.remove('bump'), 250); }, 800 + delay);
+    }
+  }
+
+  /** Screen confetti burst (skipped with reduced motion). */
+  confetti(n: number) {
+    if (this.g.s.settings.reducedMotion) return;
+    const colors = ['#ffbd38', '#16cdbb', '#9462f5', '#e23d74', '#3fb52e', '#2f78ec', '#fff4dc'];
+    const box = this.els.floaters;
+    const W = box.clientWidth || window.innerWidth;
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('i');
+      c.className = 'confetti';
+      c.style.left = `${W / 2 + (Math.random() - 0.5) * 120}px`;
+      c.style.top = '38%';
+      c.style.background = colors[i % colors.length];
+      if (i % 3 === 0) c.style.borderRadius = '50%';
+      box.appendChild(c);
+      const dx = (Math.random() - 0.5) * W * 0.9, up = -160 - Math.random() * 220, fall = 380 + Math.random() * 300;
+      const rot = (Math.random() - 0.5) * 1440;
+      c.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${dx * 0.6}px, ${up}px) rotate(${rot * 0.4}deg)`, opacity: 1, offset: 0.35 },
+        { transform: `translate(${dx}px, ${fall}px) rotate(${rot}deg)`, opacity: 0 },
+      ], { duration: 1500 + Math.random() * 700, easing: 'cubic-bezier(.2,.7,.4,1)', fill: 'forwards' });
+      setTimeout(() => c.remove(), 2300);
     }
   }
 

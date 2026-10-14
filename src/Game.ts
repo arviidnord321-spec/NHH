@@ -13,6 +13,7 @@ import * as L from './core/logic';
 import type { SaveData } from './core/state';
 import { cellXYZ, depthCategory, TreasureSpec } from './core/site';
 import { World, CAMP, SPAWN, RayHit } from './world/World';
+import { Life } from './world/Life';
 import { buildLanternTool, buildPickaxe, buildShovel } from './world/models';
 import { PlayerController } from './world/PlayerController';
 import { CameraController } from './world/CameraController';
@@ -46,6 +47,10 @@ export class Game {
   player!: PlayerController;
   cam!: CameraController;
   pets!: PetFollowers;
+  life!: Life;
+  private talkT = 0;
+  private talkWho = '';
+  private talkLine = 0;
   particles!: ParticlePool;
   input!: InputManager;
   readonly audio = new AudioManager();
@@ -126,6 +131,14 @@ export class Game {
     this.player = new PlayerController(this.world);
     this.cam = new CameraController(this.world, 1);
     this.pets = new PetFollowers(this.world, this.particles);
+    this.life = new Life(this.world, this.particles);
+    this.life.onCoin = (pos, biome) => {
+      const c = L.addCoins(this.s, BIOMES[biome].baseValue * 2);
+      this.audio.play('coin');
+      this.ui.floatText(pos, `+${c}`, '#ffd84a');
+      this.ui.flyCoins(pos, 2);
+      this.ui.updateHud();
+    };
     this.input = new InputManager(this.canvas, this.touchRoot);
     this.buildHelpers();
     this.ui = new UIManager(this.uiRoot, this);
@@ -247,6 +260,8 @@ export class Game {
     this.world.update(dt, this.time, this.player.pos);
     this.pets.update(this.running ? dt : 0, this.time, this.player.pos, this.player.yaw, this.target ? this.target.center : null, this.ui.showPetLabels);
     this.particles.update(dt);
+    if (this.running) this.life.update(dt, this.time, this.player.pos, this.s.unlocked);
+    this.updateTalk(dt);
     this.updateScanRing(dt);
     this.player.rig.root.visible = !this.cam.tooClose;
     this.updateViewmodel(dt);
@@ -255,6 +270,24 @@ export class Game {
     this.ui.frame(dt);
     if (this.s.settings.showFps) this.ui.setDebug(this.debugText());
     this.input.endFrame();
+  }
+
+  /** Speech bubble from the nearest NPC (camp characters and wandering explorers). */
+  private updateTalk(dt: number) {
+    if (!this.running) { this.ui.npcBubble(null); return; }
+    const p = this.player.pos;
+    let best: { name: string; pos: THREE.Vector3; lines: string[] } | null = null;
+    let bd = 5;
+    for (const t of [...this.world.talkers(), ...this.life.talkers()]) {
+      const d = Math.hypot(t.pos.x - p.x, t.pos.z - p.z);
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (!best) { this.talkWho = ''; this.ui.npcBubble(null); return; }
+    if (best.name !== this.talkWho) { this.talkWho = best.name; this.talkLine = Math.floor(Math.random() * best.lines.length); this.talkT = 0; this.audio.play('pop'); }
+    this.talkT += dt;
+    if (this.talkT > 6) { this.talkT = 0; this.talkLine = (this.talkLine + 1) % best.lines.length; }
+    const head = this.tmpV.set(best.pos.x, 2.9, best.pos.z);
+    this.ui.npcBubble({ name: best.name, text: best.lines[this.talkLine], pos: head });
   }
 
   private debugText() {
@@ -615,6 +648,7 @@ export class Game {
     this.player.celebrate = 1;
     this.pets.celebrate();
     this.ui.rewardCard(t.kind, title, detail, color);
+    this.ui.confetti(t.kind === 'relic' ? 70 : 30);
     const newDisplays = L.claimDisplays(this.s);
     for (const nb of newDisplays) {
       this.audio.play('unlock');
@@ -904,6 +938,7 @@ export class Game {
 
   questDone(q: { text: string; reward: { coins?: number; gems?: number } }) {
     this.audio.play('levelup');
+    this.ui.confetti(40);
     const parts = [];
     if (q.reward.coins) parts.push(`+${q.reward.coins} coins`);
     if (q.reward.gems) parts.push(`+${q.reward.gems} gems`);
@@ -927,6 +962,7 @@ export class Game {
     for (const a of L.checkAchievements(this.s)) {
       this.audio.play('unlock');
       this.ui.toast(`Achievement: ${a.name} · +${a.gems} gems`, 'quest');
+      this.ui.confetti(60);
     }
   }
 

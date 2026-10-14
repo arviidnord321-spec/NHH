@@ -38,7 +38,16 @@ export interface RayHit {
   point: THREE.Vector3;
 }
 
-interface Npc { rig: HumanRig; home: THREE.Vector3; phase: number }
+interface Npc { rig: HumanRig; home: THREE.Vector3; phase: number; name: string; lines: string[] }
+
+const NPC_LINES: Record<string, string[]> = {
+  Mara: ['Bring me your bag — I pay in shiny coins!', 'Rare minerals sell for way more, just saying.', 'Full bag? Press E near my stall to sell.'],
+  Bram: ['A better shovel digs twice as fast. Trust me.', 'Upgrades are forever. Coins are not!', 'Need a pickaxe? Open Crystal Hollow first.'],
+  Wren: ['Every egg has a featured pet — 20 hatches guarantees it!', 'The Meadow Egg is perfect for beginners.', 'Hatching is my favourite sound in the world.'],
+  'Prof. Hollis': ['Three relic shards complete a museum display.', 'Each completed display opens a secret chamber!', 'Fossils, curios, relics… bring me everything!'],
+  Pip: ['Contracts pay extra coins and gems. Want one?', 'I mapped every dig site. Twice.', 'Explore the gates north, east and south!'],
+  Juno: ['Dug a site empty? I can renew it with new finds.', 'Renewed sites hide brand-new treasure.', 'Step outside the fence before I re-survey it.'],
+};
 
 const SITE_ORIGINS: Record<BiomeId, [number, number][]> = {
   meadow: [[-6, -18], [-34, -14], [20, -26]],
@@ -355,7 +364,16 @@ export class World {
     ground.receiveShadow = false;
     this.scene.add(ground);
     // sandy shore and a sparkling ocean to the horizon
-    const sand = new THREE.Mesh(new THREE.PlaneGeometry(R * 2 + 26, R * 2 + 26), new THREE.MeshLambertMaterial({ color: '#f0d9a0' }));
+    // both are rings around the island, so nothing sits under the dig sites
+    const ring = (inner: number, outer: number) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-outer, -outer); sh.lineTo(outer, -outer); sh.lineTo(outer, outer); sh.lineTo(-outer, outer); sh.lineTo(-outer, -outer);
+      const h = new THREE.Path();
+      h.moveTo(-inner, -inner); h.lineTo(-inner, inner); h.lineTo(inner, inner); h.lineTo(inner, -inner); h.lineTo(-inner, -inner);
+      sh.holes.push(h);
+      return new THREE.ShapeGeometry(sh);
+    };
+    const sand = new THREE.Mesh(ring(R - 1, R + 13), new THREE.MeshLambertMaterial({ color: '#f0d9a0' }));
     sand.rotation.x = -Math.PI / 2;
     sand.position.y = -0.2;
     this.scene.add(sand);
@@ -380,7 +398,7 @@ export class World {
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), this.oceanMat);
+    const ocean = new THREE.Mesh(ring(R + 12, 1200), this.oceanMat);
     ocean.rotation.x = -Math.PI / 2;
     ocean.position.y = -0.45;
     this.scene.add(ocean);
@@ -717,6 +735,8 @@ export class World {
     }
   }
 
+  talkers() { return this.npcs.map((n) => ({ name: n.name, pos: n.home, lines: n.lines })); }
+
   // ───────── Camp ─────────
   private npc(name: string, role: string, x: number, z: number, look: Partial<AvatarLook>, face = 0) {
     const rig = buildAvatar({ ...DEFAULT_AVATAR, ...look });
@@ -727,7 +747,7 @@ export class World {
     label.position.set(0, 2.75, 0);
     rig.root.add(label);
     this.biomeGroups.meadow.add(rig.root);
-    this.npcs.push({ rig, home: new THREE.Vector3(x, 0, z), phase: x * 0.3 });
+    this.npcs.push({ rig, home: new THREE.Vector3(x, 0, z), phase: x * 0.3, name, lines: NPC_LINES[name] ?? ['Hello, explorer!'] });
     this.circles.push({ x, z, r: 0.5, h: 2 });
   }
 
