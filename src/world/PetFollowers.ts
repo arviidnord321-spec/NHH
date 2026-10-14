@@ -12,7 +12,8 @@ import { buildPet, makeLabel, PetRig } from './models';
 import { ParticlePool } from './ParticlePool';
 import { angleDiff, World } from './World';
 
-const SLOTS: [number, number][] = [[-1.3, -1.2], [1.3, -1.2], [-0.8, -2.5], [0.8, -2.5]];
+// beside and slightly ahead of the player so the team stays in view in first person
+const SLOTS: [number, number][] = [[-2.6, 0.5], [2.6, 0.5], [-3.4, -0.8], [3.4, -0.8]];
 
 interface Follower {
   pet: PetInstance;

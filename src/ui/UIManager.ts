@@ -57,6 +57,7 @@ export class UIManager {
     this.makeIcons();
     this.buildHud();
     this.onResize();
+    document.addEventListener('pointerlockchange', () => this.updateHint());
     this.modal.addEventListener('click', (e) => this.onModalClick(e));
     this.modal.addEventListener('change', (e) => this.onModalChange(e));
     this.modal.addEventListener('input', (e) => this.onModalInput(e));
@@ -101,10 +102,10 @@ export class UIManager {
       </div>
       <div class="tc">
         <button class="bar9 quest" id="quest" aria-label="Open quests" style="border-image-source:url(${A.questBar})"><span class="qtext" id="qtext"></span><span class="qprog" id="qprog"></span><span class="qbar"><i id="qbar"></i></span></button>
+        <div class="compass" id="compass" aria-hidden="true"><div class="compass-track" id="ctrack"></div><i class="compass-tick"></i></div>
         <div class="scan-hud hidden" id="scanhud"><div class="arrow" id="scanarrow">➤</div><div class="scan-info"><div id="scandepth"></div><div class="meter"><i id="scanmeter"></i></div></div></div>
       </div>
       <div class="tr">
-        <button class="bubble-btn small" id="btn-view" aria-label="Toggle first person view (V)" title="First / third person (V)">${SVG_EYE}</button>
         <button class="art-btn small" id="btn-sound" aria-label="Toggle sound"><img alt="" id="soundimg" src="${A.btnSoundOn}"></button>
         <button class="art-btn small" id="btn-settings" aria-label="Settings"><img alt="" src="${A.btnSettings}"></button>
       </div>
@@ -142,7 +143,6 @@ export class UIManager {
     h.querySelectorAll<HTMLButtonElement>('[data-slot]').forEach((b) => b.addEventListener('click', () => this.g.selectTool(+b.dataset.slot!)));
     this.els.campbtn.addEventListener('click', () => this.g.returnToCamp());
     this.els['btn-settings'].addEventListener('click', () => this.open('settings'));
-    this.els['btn-view'].addEventListener('click', () => this.g.setView(!this.g.cam.firstPerson));
     this.els['btn-sound'].addEventListener('click', () => {
       this.g.s.settings.muted = !this.g.s.settings.muted;
       this.g.applySettings();
@@ -210,7 +210,7 @@ export class UIManager {
   private updateHint() {
     const s = this.g.s;
     let hint = '';
-    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <kbd>Dig</kbd>' : this.g.cam?.firstPerson ? 'Click to look around &nbsp;•&nbsp; <kbd>LMB</kbd> dig &nbsp;•&nbsp; <kbd>WASD</kbd> move &nbsp;•&nbsp; <kbd>V</kbd> third person' : 'Hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> move &nbsp;•&nbsp; <kbd>Right-drag</kbd> look &nbsp;•&nbsp; <kbd>V</kbd> first person';
+    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <kbd>Dig</kbd>' : (this.g.input.pointerLocked ? 'Aim the crosshair at the dig site &nbsp;•&nbsp; hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> move' : '<kbd>Click</kbd> to look around &nbsp;•&nbsp; hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> move &nbsp;•&nbsp; <kbd>Esc</kbd> frees the mouse');
     else if (s.stats.cells < 5) hint = `Keep digging! ${5 - s.stats.cells} more cell${5 - s.stats.cells === 1 ? '' : 's'}`;
     else if (!s.starterHatched) hint = 'A <b>Starter Egg</b> appeared beside the dig site — walk over and press <b>E</b>';
     else if (s.stats.sells === 0) hint = L.bagCount(s) >= L.bagCapacity(s) ? 'Bag full! Press <b>R</b> to return to camp, then sell to <b>Mara</b>' : 'Fill your bag, then sell to <b>Mara</b> at camp (<b>R</b> returns to camp)';
@@ -234,6 +234,7 @@ export class UIManager {
     if (nc !== this.shownCoins) { this.shownCoins = nc; this.els.coins.textContent = fmt(nc); }
     else if (this.els.coins.textContent === '0' && s.coins) this.els.coins.textContent = fmt(s.coins);
     if (ng !== this.shownGems) { this.shownGems = ng; this.els.gems.textContent = fmt(ng); }
+    this.updateCompass();
     // scanner cooldown
     const cd = this.g.scanCd / Math.max(0.01, L.scanCooldown(s));
     this.els['cd-scanner'].style.height = `${Math.max(0, Math.min(1, cd)) * 100}%`;
@@ -266,11 +267,43 @@ export class UIManager {
     this.toastTimer += dt;
   }
 
+  /** Compass bar: cardinal letters + markers, positioned by bearing relative to the view. */
+  private compassMarks: { el: HTMLElement; bearing: () => number | null }[] = [];
+  private buildCompass() {
+    const track = this.els.ctrack;
+    const add = (html: string, cls: string, bearing: () => number | null) => {
+      const el = document.createElement('span');
+      el.className = cls;
+      el.innerHTML = html;
+      track.appendChild(el);
+      this.compassMarks.push({ el, bearing });
+    };
+    const toward = (x: number, z: number) => () => { const p = this.g.player.pos; return Math.atan2(-(x - p.x), -(z - p.z)); };
+    [['N', 0], ['NE', -Math.PI / 4], ['E', -Math.PI / 2], ['SE', -Math.PI * 0.75], ['S', Math.PI], ['SW', Math.PI * 0.75], ['W', Math.PI / 2], ['NW', Math.PI / 4]]
+      .forEach(([l, a]) => add(String(l), String(l).length === 1 ? 'card' : 'card minor', () => a as number));
+    add('⛺', 'mark camp', toward(0, 6));
+    add('🥚', 'mark eggs', toward(0, 19));
+    add('◎', 'mark scan', () => { const st = this.g.scanTarget; if (!st) return null; const c = st.site.worldCellCenter(st.t.cell); const p = this.g.player.pos; return Math.atan2(-(c.x - p.x), -(c.z - p.z)); });
+  }
+  private updateCompass() {
+    if (!this.compassMarks.length) this.buildCompass();
+    const yaw = this.g.cam.yaw;
+    const half = 210; // px for ±90°
+    for (const m of this.compassMarks) {
+      const b = m.bearing();
+      if (b === null) { m.el.style.display = 'none'; continue; }
+      let rel = b - yaw;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      const x = -rel / (Math.PI / 2) * half;
+      const show = Math.abs(x) < half + 10;
+      m.el.style.display = show ? '' : 'none';
+      if (show) { m.el.style.transform = `translateX(${x.toFixed(1)}px)`; m.el.style.opacity = String(Math.max(0.15, 1 - Math.abs(x) / (half + 10))); }
+    }
+  }
+
   setFirstPerson(fp: boolean) {
     this.updateHint();
     this.els.crosshair.classList.toggle('hidden', !fp);
-    this.els['btn-view'].classList.toggle('on', fp);
-    this.els['btn-view'].setAttribute('aria-pressed', String(fp));
   }
 
   setDebug(text: string) {
@@ -782,6 +815,7 @@ export class UIManager {
     return `${this.head('SETTINGS')}<div class="body settings">
       <h3>Audio</h3>${toggle('muted', 'Mute all sound')}${slider('master', 'Master volume')}${slider('music', 'Music')}${slider('sfx', 'Effects')}
       ${this.g.platform.muted ? '<p class="note">The platform has muted audio; that setting is respected separately.</p>' : ''}
+      <h3>Camera</h3><label class="srow">Field of view <span class="fovval">${Math.round(st.fov)}°</span><input type="range" min="70" max="105" step="1" value="${st.fov}" data-set="fov" aria-label="Field of view"></label>
       <h3>Graphics</h3>
       <label class="srow">Quality<select data-set="quality"><option value="low" ${st.quality === 'low' ? 'selected' : ''}>Low</option><option value="medium" ${st.quality === 'medium' ? 'selected' : ''}>Medium</option><option value="high" ${st.quality === 'high' ? 'selected' : ''}>High</option></select></label>
       ${toggle('particles', 'Decorative particles (important feedback always shows)')}${toggle('shake', 'Screen shake')}${toggle('reducedMotion', 'Reduced motion')}
@@ -795,9 +829,9 @@ export class UIManager {
 
   private renderHelp(): string {
     const rows = [
-      ['Move', 'WASD / Arrows', 'Left stick'], ['Look', 'Right-mouse drag · wheel zoom', 'Drag right side'], ['Dig', 'Hold left mouse on terrain', 'Hold Dig (center reticle)'],
+      ['Move', 'WASD / Arrows', 'Left stick'], ['Look', 'Click the game, then move the mouse (Esc frees it)', 'Drag right side'], ['Dig', 'Hold left mouse on terrain', 'Hold Dig (center reticle)'],
       ['Jump', 'Space', 'Jump'], ['Sprint', 'Shift', 'Push stick far'], ['Interact / Uncover', 'E (hold to uncover)', 'Use'], ['Echo Scan', 'Q', 'Scan'],
-      ['Return to camp', 'R', 'Camp button'], ['First / third person', 'V or scroll all the way in', 'Eye button'], ['Avatar designer', 'C', 'Avatar button'], ['Tools', '1–4', 'Tap hotbar'], ['Pets', 'P', 'Pets button'], ['Close / Settings', 'Esc', '✕ / ⚙'],
+      ['Return to camp', 'R', 'Camp button'], ['Avatar designer', 'C', 'Avatar button'], ['Tools', '1–4', 'Tap hotbar'], ['Pets', 'P', 'Pets button'], ['Close / Settings', 'Esc', '✕ / ⚙'],
     ];
     return `${this.head('CONTROLS')}<div class="body"><table class="controls"><tr><th>Action</th><th>Desktop</th><th>Touch</th></tr>${rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table>
       <button class="btn" data-act="back" data-to="settings">Back</button></div>`;
@@ -1044,11 +1078,10 @@ export class UIManager {
     if (t.type === 'range' && t.dataset.set) {
       (this.g.s.settings as any)[t.dataset.set] = +t.value;
       this.g.applySettings();
+      if (t.dataset.set === 'fov') { const l = this.modal.querySelector('.fovval'); if (l) l.textContent = `${t.value}°`; }
     }
   }
 }
-
-const SVG_EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="#fff"/><circle cx="12" cy="12" r="3.6" fill="#2563d4"/><circle cx="13.2" cy="10.8" r="1.2" fill="#fff"/></svg>';
 
 function div(cls: string) {
   const d = document.createElement('div');

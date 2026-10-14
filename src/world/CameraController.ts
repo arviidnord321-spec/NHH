@@ -49,15 +49,44 @@ export class CameraController {
     return on;
   }
 
+  /** base field of view in first person (wide so more of the world is visible) */
+  baseFov = 85;
+  private fovKick = 0;
+  private bobT = 0;
+  private bobAmt = 0;
+  private landDip = 0;
+  private wasGrounded = true;
+  private punch = 0;
+
+  /** Per-frame first-person feel: walk bob, sprint FOV kick, landing dip. */
+  feel(dt: number, speed: number, sprinting: boolean, grounded: boolean, reduced: boolean) {
+    const moving = grounded && speed > 0.5;
+    this.bobAmt += ((moving && !reduced ? Math.min(1, speed / 6) : 0) - this.bobAmt) * Math.min(1, dt * 8);
+    this.bobT += dt * (5.5 + speed * 0.9);
+    if (grounded && !this.wasGrounded && !reduced) this.landDip = 0.12;
+    this.wasGrounded = grounded;
+    this.landDip = Math.max(0, this.landDip - dt * 0.6);
+    const kick = sprinting && moving && !reduced ? 7 : 0;
+    this.fovKick += (kick - this.fovKick) * Math.min(1, dt * 6);
+    const fov = this.baseFov + this.fovKick;
+    if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
+  }
+  /** small view punch on dig contact */
+  addPunch(a: number) { if (this.shakeEnabled) this.punch = Math.min(0.06, this.punch + a); }
+
   update(dt: number, player: THREE.Vector3, lookDx: number, lookDy: number, zoom: number) {
     this.yaw -= lookDx * 0.006;
     if (this.firstPerson) {
-      this.pitch = Math.min(1.4, Math.max(-1.35, this.pitch + lookDy * 0.005));
-      if (zoom > 0) { this.setFirstPerson(false); this.zoomedOut = true; }
+      void zoom;
+      this.pitch = Math.min(1.45, Math.max(-1.45, this.pitch + lookDy * 0.005));
       const cam = this.camera;
-      cam.position.set(player.x, player.y + 1.86, player.z);
-      const cp = Math.cos(this.pitch);
-      this.dir.set(-Math.sin(this.yaw) * cp, -Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+      const bob = Math.sin(this.bobT * 2) * 0.045 * this.bobAmt;
+      const sway = Math.cos(this.bobT) * 0.03 * this.bobAmt;
+      this.punch = Math.max(0, this.punch - dt * 0.4);
+      cam.position.set(player.x + Math.cos(this.yaw) * sway, player.y + 1.82 + bob - this.landDip * 0.5, player.z - Math.sin(this.yaw) * sway);
+      const pitch = this.pitch + this.punch;
+      const cp = Math.cos(pitch);
+      this.dir.set(-Math.sin(this.yaw) * cp, -Math.sin(pitch), -Math.cos(this.yaw) * cp);
       cam.lookAt(cam.position.x + this.dir.x, cam.position.y + this.dir.y, cam.position.z + this.dir.z);
       this.tooClose = true;
       this.target.set(player.x, player.y + 1.5, player.z);

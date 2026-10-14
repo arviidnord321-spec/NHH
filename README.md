@@ -28,7 +28,7 @@ Add `?debug` to the URL for a performance overlay toggle in Settings and `window
 | Action | Desktop | Touch |
 |---|---|---|
 | Move | WASD / arrows | Left virtual stick |
-| Look | Right-mouse drag (wheel = zoom) | Drag the right side |
+| Look | Click the game, then move the mouse (Esc frees it) | Drag the right side |
 | Dig | Hold left mouse on a valid cell | Hold **Dig** (center reticle) |
 | Jump | Space | Jump |
 | Sprint | Shift | Push the stick past its edge |
@@ -37,12 +37,14 @@ Add `?debug` to the URL for a performance overlay toggle in Settings and `window
 | Return to camp | R or HUD button | HUD button |
 | Tools | 1–4 or click hotbar | Tap hotbar |
 | Pets | P or HUD button | HUD button |
+| Avatar designer | C or Avatar button | Avatar button |
 | Close / settings | Esc | ✕ / ⚙ |
 
 ## What's in the game
 
 - **4 biomes around a persistent camp**: Meadow Camp, Crystal Hollow (geode cavities), Ember Quarry (terraced quarries, gentle warm vents), Aurora Depths (ruin pillars, floating stones, aurora sky). Each biome has 3 authored dig sites, a landmark, and a sealed secret chamber.
 - **Destructible voxel dig sites** (12×12×8 one-metre cells), with only exposed faces meshed. Collision uses the same cell data. Bedrock and site walls are visibly distinct. Reach is 4 m with line-of-sight checks; cracks show partial damage; multi-unit nodes show their bag cost before you mine them.
+- **First person**: the game is always played in first person with a wide, adjustable field of view (Settings → Camera), a held-tool view model, walk bob and a compass bar.
 - **Echo Scan**: a teal ring, a direction arrow, a depth category (shallow/below/deep), a signal meter and pings. It shows "No signal nearby" when nothing is in range.
 - **Treasures**: coin caches, gem geodes, fossils, curios, egg tokens and **seeded relic shards** (3 per biome, always placed in that biome's sites, never a loot roll).
 - **8 pet species + 4 named variants** as faceted 3D models following the reference sheet. Pets follow you, assist when you dig, celebrate finds and idle-animate. Pets level 1–10. You get Equip Best, favorites/lock, sorting, filters, an inspect view, release, and **Shiny merging**.

@@ -14,10 +14,10 @@ export { AVATAR_OPTIONS, DEFAULT_AVATAR, type AvatarLook } from '../core/avatarD
 const smooth = (color: string, rough = 0.55) => mat(color, { rough });
 
 function capsule(r: number, len: number) {
-  return cachedGeo(`cap${r},${len}`, () => new THREE.CapsuleGeometry(r, len, 5, 14));
+  return cachedGeo(`cap${r},${len}`, () => new THREE.CapsuleGeometry(r, len, 3, 10));
 }
 function rbox(w: number, h: number, d: number, r: number, seg = 4) {
-  return cachedGeo(`rbox${w},${h},${d},${r},${seg}`, () => new RoundedBoxGeometry(w, h, d, seg, r));
+  return cachedGeo(`rbox${w},${h},${d},${r},${seg}`, () => new RoundedBoxGeometry(w, h, d, Math.min(seg, 3), r));
 }
 
 // ───────── painted textures ─────────
@@ -246,7 +246,7 @@ export function buildAvatar(look: AvatarLook): HumanRig {
   head.position.set(0, 1.74, 0);
   body.add(head);
   add(head, cachedGeo('neck', () => new THREE.CylinderGeometry(0.13, 0.14, 0.12, 14)), skin, 0, 0.03, 0);
-  add(head, rbox(0.64, 0.6, 0.6, 0.18, 5), skin, 0, 0.36, 0);
+  add(head, rbox(0.64, 0.6, 0.6, 0.18, 3), skin, 0, 0.36, 0);
   const faceM = new THREE.MeshStandardMaterial({ map: faceTexture(look.face), transparent: true, roughness: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
   const face = new THREE.Mesh(cachedGeo('facePlane', () => new THREE.PlaneGeometry(0.56, 0.56)), faceM);
   face.position.set(0, 0.34, 0.302);
@@ -309,7 +309,7 @@ function buildHair(head: THREE.Group, look: AvatarLook) {
   const shell = (cover: number, frontLift: number, ridges: number, puff: number) => {
     const key = `hairShell${cover},${frontLift},${ridges},${puff},${look.hairColor}`;
     const geo = cachedGeo(key, () => {
-      const g = new THREE.SphereGeometry(0.4, 56, 24, 0, Math.PI * 2, 0, Math.PI * cover);
+      const g = new THREE.SphereGeometry(0.4, 36, 14, 0, Math.PI * 2, 0, Math.PI * cover);
       const p = g.attributes.position;
       const col = new Float32Array(p.count * 3);
       const lc = new THREE.Color(look.hairColor).offsetHSL(0, 0.02, 0.13);

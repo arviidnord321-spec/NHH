@@ -60,7 +60,6 @@ export class InputManager {
       case 'Digit2': return 'tool2';
       case 'Digit3': return 'tool3';
       case 'Digit4': return 'tool4';
-      case 'KeyV': return 'view';
       case 'KeyC': return 'avatar';
       default: return null;
     }

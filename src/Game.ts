@@ -136,7 +136,9 @@ export class Game {
     this.refreshPlayerLook();
     this.world.scene.add(this.cam.camera);
     this.cam.camera.add(this.viewmodel);
-    if (this.s.cameraFirstPerson) this.setView(true, false);
+    // the game is always played in first person
+    this.cam.baseFov = this.s.settings.fov;
+    this.setView(true, false);
     this.syncPets();
     this.world.refresh(this.s);
     L.syncStateQuests(this.s);
@@ -216,6 +218,7 @@ export class Game {
     this.particles.enabled = st.particles;
     this.particles.scale = st.quality === 'low' ? 0.6 : 1;
     this.cam.shakeEnabled = st.shake && !st.reducedMotion;
+    this.cam.baseFov = st.fov;
     document.body.classList.toggle('reduced-motion', st.reducedMotion);
     this.resize();
   }
@@ -266,19 +269,18 @@ export class Game {
       if (inp.wasPressed('pause')) { this.ui.open('settings'); return; }
       if (inp.wasPressed('pets')) { this.ui.open('pets'); return; }
       if (inp.wasPressed('avatar')) { this.ui.open('avatar'); return; }
-      if (inp.wasPressed('view')) this.setView(!this.cam.firstPerson);
       if (inp.wasPressed('camp')) this.returnToCamp();
       if (inp.wasPressed('scan')) this.echoScan();
       if (inp.wasPressed('tool1')) this.selectTool(0);
       if (inp.wasPressed('tool2')) this.selectTool(1);
       if (inp.wasPressed('tool3')) this.selectTool(2);
       if (inp.wasPressed('tool4')) this.selectTool(3);
+      this.cam.feel(dt, Math.hypot(this.player.vel.x, this.player.vel.z), inp.isHeld('sprint'), this.player.grounded, this.s.settings.reducedMotion);
       this.cam.update(dt, this.player.visualPos, inp.look.dx, inp.look.dy, inp.zoom);
     } else {
       this.cam.update(dt, this.player.visualPos, 0, 0, 0);
     }
     const team = L.teamStats(this.s);
-    if (this.cam.zoomedIn || this.cam.zoomedOut) { this.cam.zoomedIn = this.cam.zoomedOut = false; this.setView(this.cam.firstPerson); }
     const facing = this.swingT >= 0 && this.swingTarget ? Math.atan2(this.swingTargetCenter().x - this.player.pos.x, this.swingTargetCenter().z - this.player.pos.z) : this.cam.firstPerson ? this.cam.yaw + Math.PI : null;
     const res = this.player.update(dt, inp.move, this.cam.yaw, inp.isHeld('sprint'), first && inp.wasPressed('jump') || (inp.isHeld('jump') && this.player.grounded && first), L.moveSpeedMul(this.s, team), facing);
     if (res === 'oob') {
@@ -451,6 +453,7 @@ export class Game {
     } else {
       site.damage.set(cell, remaining);
       this.cam.addShake(0.02);
+      this.cam.addPunch(0.025);
     }
   }
 
@@ -467,6 +470,7 @@ export class Game {
     this.particles.burstRing(center.clone().addScaledVector(normal, 0.4), '#ffffff', 10, 3, 0.18);
     this.audio.play('break');
     this.cam.addShake(0.06);
+    this.cam.addPunch(0.045);
     this.ui.floatText(center, mat.units > 1 ? `+${mat.units} ${mat.name}` : `+1 ${mat.name}`, mat.units > 1 ? '#ffbd38' : '#fff4dc');
     const q = L.progressQuest(this.s, 'break');
     if (q) this.questDone(q);
@@ -717,7 +721,7 @@ export class Game {
     if (!fp && this.input.pointerLocked) document.exitPointerLock?.();
     this.ui.setFirstPerson(fp);
     this.rebuildViewmodel();
-    if (announce) this.ui.toast(fp ? (this.input.isTouch ? 'First person — drag to look' : 'First person — click to look around with the mouse (Esc frees it)') : 'Third person view', 'info');
+    void announce;
   }
 
   readonly viewmodel = new THREE.Group();

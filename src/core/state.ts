@@ -50,6 +50,7 @@ export interface Settings {
   keepFavorites: boolean;
   fastHatch: boolean;
   showFps: boolean;
+  fov: number;
 }
 
 export interface SaveData {
@@ -95,7 +96,7 @@ export interface SaveData {
 export function defaultSettings(): Settings {
   return {
     master: 0.8, music: 0.45, sfx: 0.8, muted: false, quality: 'medium', particles: true, shake: true,
-    reducedMotion: false, keepFavorites: true, fastHatch: false, showFps: false,
+    reducedMotion: false, keepFavorites: true, fastHatch: false, showFps: false, fov: 85,
   };
 }
 
@@ -281,7 +282,7 @@ export function validateSave(raw: unknown): ValidateResult {
     muted: bool(se.muted, false),
     quality: se.quality === 'low' || se.quality === 'high' || se.quality === 'medium' ? se.quality : 'medium',
     particles: bool(se.particles, true), shake: bool(se.shake, true), reducedMotion: bool(se.reducedMotion, false),
-    keepFavorites: bool(se.keepFavorites, true), fastHatch: bool(se.fastHatch, false), showFps: bool(se.showFps, false),
+    keepFavorites: bool(se.keepFavorites, true), fastHatch: bool(se.fastHatch, false), showFps: bool(se.showFps, false), fov: num(se.fov, 70, 105, 85),
   };
   d.golemCounter = int(r.golemCounter, 0, 7, 0);
   d.savedAt = int(r.savedAt, 0, 1e15, 0);
