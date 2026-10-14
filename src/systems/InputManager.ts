@@ -3,7 +3,7 @@
  * buttons). World input is ignored while the pointer is over UI. Held actions
  * are released on blur / pointercancel / visibility change.
  */
-export type Action = 'dig' | 'jump' | 'sprint' | 'interact' | 'scan' | 'camp' | 'pets' | 'pause' | 'tool1' | 'tool2' | 'tool3' | 'tool4' | 'eggs' | 'upgrades';
+export type Action = 'dig' | 'jump' | 'sprint' | 'interact' | 'scan' | 'camp' | 'pets' | 'pause' | 'tool1' | 'tool2' | 'tool3' | 'tool4' | 'eggs' | 'upgrades' | 'view' | 'avatar';
 
 export class InputManager {
   move = { x: 0, y: 0 }; // x right, y forward
@@ -23,6 +23,9 @@ export class InputManager {
   private lookId: number | null = null;
   private lookLast = { x: 0, y: 0 };
   enabled = true;
+  /** when true (first-person on desktop) a canvas click captures the mouse */
+  wantPointerLock = false;
+  get pointerLocked() { return document.pointerLockElement === this.canvas; }
   stickEl!: HTMLElement;
   knobEl!: HTMLElement;
 
@@ -57,6 +60,8 @@ export class InputManager {
       case 'Digit2': return 'tool2';
       case 'Digit3': return 'tool3';
       case 'Digit4': return 'tool4';
+      case 'KeyV': return 'view';
+      case 'KeyC': return 'avatar';
       default: return null;
     }
   }
@@ -93,6 +98,9 @@ export class InputManager {
       return;
     }
     this.updatePointer(e);
+    if (this.wantPointerLock && !this.pointerLocked && e.button === 0) {
+      try { const r = (this.canvas.requestPointerLock as any)(); if (r && r.catch) r.catch(() => {}); } catch { /* not allowed here: drag-to-look still works */ }
+    }
     if (e.button === 0) { this.held.add('dig'); this.pressed.add('dig'); }
     if (e.button === 2) { this.rightDrag = true; this.lastMouse = { x: e.clientX, y: e.clientY }; }
   }
@@ -112,6 +120,11 @@ export class InputManager {
         this.look.dy += (e.clientY - this.lookLast.y) * 1.4;
         this.lookLast = { x: e.clientX, y: e.clientY };
       }
+      return;
+    }
+    if (this.pointerLocked) {
+      this.look.dx += e.movementX * 0.9;
+      this.look.dy += e.movementY * 0.9;
       return;
     }
     this.updatePointer(e);

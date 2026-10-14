@@ -7,12 +7,13 @@
 import * as THREE from 'three';
 import {
   BIOMES, BiomeId, COIN_CACHE_MUL, COLLECTIBLES, DIG, EGG_BY_ID, FIND_GEMS, GEODE_GEMS, MATERIALS, PET_ENTRY_BY_ID,
-  QUALITY, RARITY_INFO, RELIC_DUPLICATE_GEMS, SAVE, SITE, TOOLS, BIOME_ORDER, CAPS, COSMETICS,
+  QUALITY, RARITY_INFO, RELIC_DUPLICATE_GEMS, SAVE, SITE, TOOLS, BIOME_ORDER, CAPS,
 } from './data/balance';
 import * as L from './core/logic';
 import type { SaveData } from './core/state';
 import { cellXYZ, depthCategory, TreasureSpec } from './core/site';
 import { World, CAMP, SPAWN, RayHit } from './world/World';
+import { buildLanternTool, buildPickaxe, buildShovel } from './world/models';
 import { PlayerController } from './world/PlayerController';
 import { CameraController } from './world/CameraController';
 import { PetFollowers } from './world/PetFollowers';
@@ -103,6 +104,7 @@ export class Game {
   setPause(reason: PauseReason, on: boolean) {
     const before = this.running;
     if (on) this.pause.add(reason); else this.pause.delete(reason);
+    if (!this.running && this.input?.pointerLocked) document.exitPointerLock?.();
     if (this.running !== before) {
       if (this.running) this.platform.gameplayStart(); else this.platform.gameplayStop();
       this.input.releaseAll();
@@ -132,6 +134,9 @@ export class Game {
     this.cam.snap(this.player.pos);
     this.applySettings();
     this.refreshPlayerLook();
+    this.world.scene.add(this.cam.camera);
+    this.cam.camera.add(this.viewmodel);
+    if (this.s.cameraFirstPerson) this.setView(true, false);
     this.syncPets();
     this.world.refresh(this.s);
     L.syncStateQuests(this.s);
@@ -241,6 +246,7 @@ export class Game {
     this.particles.update(dt);
     this.updateScanRing(dt);
     this.player.rig.root.visible = !this.cam.tooClose;
+    this.updateViewmodel(dt);
     this.audio.update(dt);
     this.renderer.render(this.world.scene, this.cam.camera);
     this.ui.frame(dt);
@@ -259,6 +265,8 @@ export class Game {
       // discrete actions once per frame
       if (inp.wasPressed('pause')) { this.ui.open('settings'); return; }
       if (inp.wasPressed('pets')) { this.ui.open('pets'); return; }
+      if (inp.wasPressed('avatar')) { this.ui.open('avatar'); return; }
+      if (inp.wasPressed('view')) this.setView(!this.cam.firstPerson);
       if (inp.wasPressed('camp')) this.returnToCamp();
       if (inp.wasPressed('scan')) this.echoScan();
       if (inp.wasPressed('tool1')) this.selectTool(0);
@@ -270,7 +278,8 @@ export class Game {
       this.cam.update(dt, this.player.visualPos, 0, 0, 0);
     }
     const team = L.teamStats(this.s);
-    const facing = this.swingT >= 0 && this.swingTarget ? Math.atan2(this.swingTargetCenter().x - this.player.pos.x, this.swingTargetCenter().z - this.player.pos.z) : null;
+    if (this.cam.zoomedIn || this.cam.zoomedOut) { this.cam.zoomedIn = this.cam.zoomedOut = false; this.setView(this.cam.firstPerson); }
+    const facing = this.swingT >= 0 && this.swingTarget ? Math.atan2(this.swingTargetCenter().x - this.player.pos.x, this.swingTargetCenter().z - this.player.pos.z) : this.cam.firstPerson ? this.cam.yaw + Math.PI : null;
     const res = this.player.update(dt, inp.move, this.cam.yaw, inp.isHeld('sprint'), first && inp.wasPressed('jump') || (inp.isHeld('jump') && this.player.grounded && first), L.moveSpeedMul(this.s, team), facing);
     if (res === 'oob') {
       this.returnToCamp(true);
@@ -301,9 +310,10 @@ export class Game {
   private updateTarget() {
     const inp = this.input;
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    const useCenter = inp.isTouch || !inp.pointer.inside;
+    const fp = this.cam.firstPerson;
+    const useCenter = inp.isTouch || !inp.pointer.inside || fp || inp.pointerLocked;
     const px = useCenter ? w / 2 : inp.pointer.x;
-    const py = useCenter ? h * 0.45 : inp.pointer.y;
+    const py = useCenter ? h * (fp ? 0.5 : 0.45) : inp.pointer.y;
     this.raycaster.setFromCamera(new THREE.Vector2((px / w) * 2 - 1, -(py / h) * 2 + 1), this.cam.camera);
     const ray = this.raycaster.ray;
     const hit = this.world.raycast(ray.origin, ray.direction, 40);
@@ -699,14 +709,66 @@ export class Game {
     this.ui.updateHud();
   }
 
+  /** First-person ⇄ third-person. */
+  setView(fp: boolean, announce = true) {
+    this.cam.setFirstPerson(fp);
+    this.s.cameraFirstPerson = fp;
+    this.input.wantPointerLock = fp && !this.input.isTouch;
+    if (!fp && this.input.pointerLocked) document.exitPointerLock?.();
+    this.ui.setFirstPerson(fp);
+    this.rebuildViewmodel();
+    if (announce) this.ui.toast(fp ? (this.input.isTouch ? 'First person — drag to look' : 'First person — click to look around with the mouse (Esc frees it)') : 'Third person view', 'info');
+  }
+
+  readonly viewmodel = new THREE.Group();
+  private vmKey = '';
+  private vmBob = 0;
+  private rebuildViewmodel() {
+    const key = `${this.selectedSlot}:${this.s.toolTier}:${this.s.avatar.skin}:${this.s.avatar.inner}`;
+    if (key === this.vmKey) return;
+    this.vmKey = key;
+    this.viewmodel.clear();
+    const tool = this.selectedSlot === 1 ? buildPickaxe(this.s.toolTier) : this.selectedSlot === 2 ? buildLanternTool() : buildShovel(this.s.toolTier);
+    // blade (tool −Y) aims forward, slightly up and toward the crosshair
+    tool.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(-0.38, 0.32, -1).normalize());
+    tool.rotateY(0.6);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshStandardMaterial({ color: this.s.avatar.skin, roughness: 0.5 }));
+    hand.scale.set(1, 1.15, 0.9);
+    const sleeve = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.4, 4, 12), new THREE.MeshStandardMaterial({ color: this.s.avatar.inner, roughness: 0.6 }));
+    sleeve.position.set(0.1, -0.12, 0.3);
+    sleeve.rotation.set(1.2, 0, 0.3);
+    const g = new THREE.Group();
+    g.add(tool, hand, sleeve);
+    g.traverse((o) => { o.castShadow = false; (o as THREE.Mesh).renderOrder = 10; });
+    this.viewmodel.add(g);
+    this.viewmodel.position.set(0.3, -0.3, -0.5);
+    g.scale.setScalar(0.42);
+  }
+  private updateViewmodel(dt: number) {
+    this.viewmodel.visible = this.cam.firstPerson && this.selectedSlot !== 3;
+    if (!this.viewmodel.visible) return;
+    this.rebuildViewmodel();
+    const speed = Math.hypot(this.player.vel.x, this.player.vel.z);
+    this.vmBob += dt * speed * 1.6;
+    const g = this.viewmodel;
+    const s = this.player.swing;
+    let rx = 0, ry = 0;
+    if (s >= 0) {
+      if (s < 0.45) rx = 0.7 * (s / 0.45);
+      else if (s < 0.6) rx = 0.7 - 1.6 * ((s - 0.45) / 0.15);
+      else rx = -0.9 + 0.9 * ((s - 0.6) / 0.4);
+      ry = -rx * 0.25;
+    }
+    g.rotation.set(rx, ry, 0);
+    g.position.set(0.3 + Math.sin(this.vmBob) * 0.01, -0.3 + Math.abs(Math.cos(this.vmBob)) * 0.014, -0.5);
+  }
+
   refreshTool() {
     this.player.setTool(this.s.activeTool, this.s.toolTier);
   }
 
   refreshPlayerLook() {
-    const h = COSMETICS.find((c) => c.id === this.s.cosmetics.helmet)!;
-    const sc = COSMETICS.find((c) => c.id === this.s.cosmetics.scarf)!;
-    this.player.setLook(h.color, sc.color, this.s.cosmetics.crown);
+    this.player.applyAvatar(this.s.avatar, this.s.cosmetics.crown);
     this.refreshTool();
   }
 

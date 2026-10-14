@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { buildEgg, buildPet, EggRig, PetRig } from '../world/models';
+import { buildAvatar, type AvatarLook } from '../world/avatar';
 
 export interface HatchOptions { fast: boolean; reduced: boolean }
 export type HatchPhase = 'anticipation' | 'rocking' | 'cracks' | 'separate' | 'reveal' | 'done';
@@ -122,6 +123,64 @@ export class Showcase {
     this.renderer.setSize(prevSize.x || size, prevSize.y || size, false);
     this.iconCache.set(key, url);
     return url;
+  }
+
+  // ───────── avatar preview (live, drag to spin) ─────────
+  private pv: { host: HTMLElement; key: string; obj: THREE.Object3D | null; yaw: number; spin: number; raf: number; drag: number | null } | null = null;
+
+  attachPreview(host: HTMLElement, look: AvatarLook, crown: boolean) {
+    const key = JSON.stringify(look) + crown;
+    if (!this.pv) {
+      this.pv = { host, key: '', obj: null, yaw: 0.45, spin: 0, raf: 0, drag: null };
+      const loop = () => {
+        const pv = this.pv;
+        if (!pv) return;
+        if (pv.drag === null) pv.yaw += 0.004 + pv.spin;
+        pv.spin *= 0.92;
+        if (pv.obj) pv.obj.rotation.y = pv.yaw;
+        this.renderer.render(this.scene, this.cam);
+        pv.raf = requestAnimationFrame(loop);
+      };
+      this.pv.raf = requestAnimationFrame(loop);
+    }
+    const pv = this.pv;
+    if (pv.host !== host || !host.contains(this.renderer.domElement)) {
+      pv.host = host;
+      host.appendChild(this.renderer.domElement);
+      host.onpointerdown = (e) => { pv.drag = e.clientX; host.setPointerCapture(e.pointerId); };
+      host.onpointermove = (e) => { if (pv.drag !== null) { pv.yaw += (e.clientX - pv.drag) * 0.012; pv.drag = e.clientX; } };
+      host.onpointerup = host.onpointercancel = () => { pv.drag = null; };
+    }
+    const w = host.clientWidth || 300, h = host.clientHeight || 380;
+    this.renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    this.renderer.setSize(w, h, false);
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
+    this.cam.aspect = w / h;
+    this.cam.fov = 30;
+    this.cam.position.set(0, 1.25, 5.6);
+    this.cam.lookAt(0, 1.02, 0);
+    this.cam.updateProjectionMatrix();
+    this.rays.visible = false;
+    if (pv.key !== key) {
+      pv.key = key;
+      if (pv.obj) this.stage.remove(pv.obj);
+      const rig = buildAvatar(look);
+      rig.crown.visible = crown;
+      rig.root.rotation.y = pv.yaw;
+      pv.obj = rig.root;
+      this.stage.clear();
+      this.stage.add(rig.root);
+    }
+  }
+
+  detachPreview() {
+    if (!this.pv) return;
+    cancelAnimationFrame(this.pv.raf);
+    this.stage.clear();
+    this.renderer.domElement.remove();
+    this.rays.visible = true;
+    this.pv = null;
   }
 
   // ───────── hatch ─────────

@@ -10,8 +10,9 @@ import { BIOMES, BIOME_ORDER, BiomeId, COLLECTIBLES, EGGS, SITE, QualityLevel, Q
 import type { SaveData } from '../core/state';
 import { hashString, mulberry32 } from '../core/rng';
 import { VoxelSite, blockTexture } from './VoxelSite';
+import { buildAvatar, DEFAULT_AVATAR, type AvatarLook } from './avatar';
 import {
-  add, basic, buildChest, buildCrystalCluster, buildEgg, buildFencePost, buildFlag, buildHuman, buildLanternPost,
+  add, basic, buildChest, buildCrystalCluster, buildEgg, buildFencePost, buildFlag, buildLanternPost,
   buildBush, buildPedestal, buildRock, buildSign, buildTent, buildTree, EggRig, HumanRig, lam, makeLabel, prepGeo, rb, shade, sharedVertexMaterial,
 } from './models';
 
@@ -92,6 +93,9 @@ export class World {
   private siteLambert: THREE.MeshLambertMaterial;
   private siteGlow: THREE.MeshBasicMaterial;
   private quality: QualityLevel = 'medium';
+  private skyTime = { value: 0 };
+  private oceanMat: THREE.ShaderMaterial | null = null;
+  private pollen: THREE.Points | null = null;
   private labels: THREE.Sprite[] = [];
   private labelPos = new THREE.Vector3();
   readonly fog = new THREE.Fog('#cdeaf7', 60, 210);
@@ -168,9 +172,27 @@ export class World {
   // ───────── Sky ─────────
   private buildSky() {
     this.skyMat = new THREE.ShaderMaterial({
-      uniforms: { top: { value: this.skyTop }, bottom: { value: this.skyBottom } },
+      uniforms: { top: { value: this.skyTop }, bottom: { value: this.skyBottom }, uTime: this.skyTime },
       vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y*1.4+0.15,0.0,1.0); gl_FragColor = vec4(mix(bottom, top, h),1.0); }',
+      // gradient sky + soft drifting wispy clouds + a warm sun glow
+      fragmentShader: `uniform vec3 top; uniform vec3 bottom; uniform float uTime; varying vec3 vP;
+        float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+        float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+          return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+        float fbm(vec2 p){ float v=0.0, a=0.5; for(int i=0;i<5;i++){ v+=a*n2(p); p=p*2.03+vec2(1.7,9.2); a*=0.5; } return v; }
+        void main(){
+          vec3 d = normalize(vP);
+          float h = clamp(d.y*1.35+0.12,0.0,1.0);
+          vec3 col = mix(bottom, top, pow(h, 0.8));
+          vec2 uv = d.xz / (d.y + 0.18) * 1.6 + vec2(uTime*0.012, uTime*0.004);
+          float c = fbm(uv * vec2(1.0, 2.2));
+          float wisps = smoothstep(0.52, 0.82, c) * smoothstep(0.02, 0.22, d.y);
+          col = mix(col, vec3(1.0), wisps * 0.85);
+          vec3 sunDir = normalize(vec3(0.45, 0.55, 0.3));
+          float sun = max(dot(d, sunDir), 0.0);
+          col += vec3(1.0, 0.92, 0.75) * (pow(sun, 64.0) * 0.8 + pow(sun, 6.0) * 0.12);
+          gl_FragColor = vec4(col, 1.0);
+        }`,
       side: THREE.BackSide, depthWrite: false, fog: false,
     });
     const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 16, 10), this.skyMat);
@@ -281,7 +303,7 @@ export class World {
         const t = (i + 0.5) / n;
         const x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
         // low rocky ledges keep the horizon (sky, mesas, forest) visible
-        const hh = 1.6 + ((i * 7) % 5) * 0.45;
+        const hh = 1.1 + ((i * 7) % 5) * 0.3;
         add(st, rb(3.4, hh, 3.4, 0.4), lam(shade(rockC, ((i * 3) % 4) * 0.03)), x, hh / 2 - 0.2, z, 0, (i % 3) * 0.2, 0, false).userData.noShadow = true;
         if (b !== 'ember' && b !== 'aurora' && i % 2 === 0) add(st, rb(3.6, 0.5, 3.6, 0.2), lam(def.ground), x, hh - 0.1, z, 0, (i % 3) * 0.2, 0, false);
         if (b === 'crystal' && i % 4 === 0) { const cc = buildCrystalCluster('#9462f5', 4, 1.4); cc.position.set(x, hh - 0.2, z); st.add(cc); }
@@ -314,7 +336,8 @@ export class World {
   /** Ground to the horizon (with a hole over the playable plus-shape), distant mesas and forest. */
   private buildBackdrop() {
     const outer = new THREE.Shape();
-    outer.moveTo(-420, -420); outer.lineTo(420, -420); outer.lineTo(420, 420); outer.lineTo(-420, 420); outer.lineTo(-420, -420);
+    const R = 205;
+    outer.moveTo(-R, -R); outer.lineTo(R, -R); outer.lineTo(R, R); outer.lineTo(-R, R); outer.lineTo(-R, -R);
     const e = 39; // just inside the perimeter ledges, under them
     const hole = new THREE.Path();
     const pts: [number, number][] = [[-e, -121], [e, -121], [e, -e], [121, -e], [121, e], [e, e], [e, 121], [-e, 121], [-e, e], [-e, -e], [-e, -121]];
@@ -331,6 +354,36 @@ export class World {
     ground.position.y = -0.03;
     ground.receiveShadow = false;
     this.scene.add(ground);
+    // sandy shore and a sparkling ocean to the horizon
+    const sand = new THREE.Mesh(new THREE.PlaneGeometry(R * 2 + 26, R * 2 + 26), new THREE.MeshLambertMaterial({ color: '#f0d9a0' }));
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.y = -0.2;
+    this.scene.add(sand);
+    this.oceanMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: this.skyTime, horizon: { value: this.skyBottom }, deep: { value: new THREE.Color('#0d6fd0') }, shallow: { value: new THREE.Color('#3fd0f0') } },
+      vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }',
+      fragmentShader: `uniform float uTime; uniform vec3 horizon; uniform vec3 deep; uniform vec3 shallow; varying vec3 vW;
+        float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
+        void main(){
+          float r = max(abs(vW.x), abs(vW.z));
+          float shore = smoothstep(${R + 32}.0, ${R + 13}.0, r);
+          vec3 col = mix(deep, shallow, shore * 0.85 + 0.12);
+          float w = sin(vW.x*0.35 + uTime*1.2) * sin(vW.z*0.31 - uTime*0.9) + sin((vW.x+vW.z)*0.9 + uTime*2.1)*0.35;
+          col += vec3(0.08,0.12,0.16) * w;
+          vec2 cell = floor(vW.xz * 0.6);
+          float tw = step(0.985, h21(cell + floor(uTime*2.0)));
+          col += vec3(1.0) * tw * 0.7;
+          float foam = smoothstep(${R + 16}.0, ${R + 13}.0, r) * (0.6 + 0.4*sin(uTime*2.0 + r));
+          col = mix(col, vec3(1.0), foam);
+          float dist = length(vW.xz - cameraPosition.xz);
+          col = mix(col, horizon, smoothstep(180.0, 520.0, dist));
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    });
+    const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), this.oceanMat);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = -0.45;
+    this.scene.add(ocean);
     const g = new THREE.Group();
     const rng = mulberry32(4242);
     // forest band just beyond the ledges
@@ -665,8 +718,8 @@ export class World {
   }
 
   // ───────── Camp ─────────
-  private npc(name: string, role: string, x: number, z: number, look: Parameters<typeof buildHuman>[0], face = 0) {
-    const rig = buildHuman(look);
+  private npc(name: string, role: string, x: number, z: number, look: Partial<AvatarLook>, face = 0) {
+    const rig = buildAvatar({ ...DEFAULT_AVATAR, ...look });
     rig.root.position.set(x, 0, z);
     rig.root.rotation.y = face;
     rig.root.scale.setScalar(0.92);
@@ -717,7 +770,7 @@ export class World {
     };
     stall(-9, 4, '#ffbd38', 0.35);
     this.boxes.push({ minX: -11, minZ: 3.4, maxX: -7, maxZ: 6.2, h: 1.2, enabled: true });
-    this.npc('Mara', 'Trader · Sell resources', -9.2, 3.6, { jacket: '#c44a3a', pants: '#3a3f4f', skin: '#e8b88a', helmet: null, scarf: '#ffbd38', backpack: false, hat: 'wide', hair: '#3b2418' }, 0.35);
+    this.npc('Mara', 'Trader · Sell resources', -9.2, 3.6, { skin: '#e8b88a', face: 'smile', hair: 'bob', hairColor: '#3b2418', outfit: 'jacket', top: '#c44a3a', inner: '#ffbd38', pants: '#3a3f4f', scarf: '#ffbd38', backpack: false }, 0.35);
     this.interactables.push({ id: 'trader', kind: 'trader', pos: new THREE.Vector3(-8.2, 0, 6.6), radius: 3.6, active: true });
     // sell-zone ring
     const ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 2.9, 32), basic('#ffbd38', 0.55));
@@ -736,7 +789,7 @@ export class World {
     add(sg, rb(0.7, 2.6, 0.7, 0.08), lam('#6c6872'), 1.3, 3.0, -1.2);
     st.add(sg);
     this.boxes.push({ minX: 7, minZ: 2.2, maxX: 11, maxZ: 5, h: 3, enabled: true });
-    this.npc('Bram', 'Smith · Upgrades', 7.6, 6.1, { jacket: '#5a5f6e', pants: '#3b2b22', skin: '#c98e62', helmet: null, scarf: '#ff7a2e', backpack: false, hair: '#2a2a2a' }, -0.6);
+    this.npc('Bram', 'Smith · Upgrades', 7.6, 6.1, { skin: '#c98e62', face: 'determined', hair: 'short', hairColor: '#2a2a2a', outfit: 'tee', top: '#5a5f6e', inner: '#ff7a2e', pants: '#3b2b22', scarf: '', backpack: false }, -0.6);
     this.interactables.push({ id: 'smith', kind: 'smith', pos: new THREE.Vector3(7.6, 0, 7.4), radius: 3.2, active: true });
     // Egg shrine
     const shrineZ = 19;
@@ -764,7 +817,7 @@ export class World {
       this.circles.push({ x, z, r: 0.9, h: 1.5 });
       this.interactables.push({ id: `egg_${e.id}`, kind: 'eggs', pos: new THREE.Vector3(x, 0, z - 1.6), radius: 2.0, data: e.id, active: true });
     });
-    this.npc('Wren', 'Egg Keeper', 0, 22.5, { jacket: '#9462f5', pants: '#2c3d6b', skin: '#ffd9a8', helmet: null, scarf: '#fff4dc', backpack: false, hat: 'cap', hair: '#a85a2a' }, Math.PI);
+    this.npc('Wren', 'Egg Keeper', 0, 22.5, { skin: '#ffd9a8', face: 'happy', hair: 'ponytail', hairColor: '#a85a2a', outfit: 'hoodie', top: '#9462f5', inner: '#fff4dc', pants: '#2c3d6b', scarf: '', hat: 'cap', hatColor: '#2f78ec', backpack: false }, Math.PI);
     // Museum tent
     const mt = buildTent('#f2e2c0');
     mt.position.set(-16, 0, 16);
@@ -772,7 +825,7 @@ export class World {
     mt.scale.setScalar(1.6);
     st.add(mt);
     this.boxes.push({ minX: -18.6, minZ: 12.2, maxX: -13.4, maxZ: 19.8, h: 3, enabled: true });
-    this.npc('Prof. Hollis', 'Curator · Museum', -12, 13.2, { jacket: '#2c6e5a', pants: '#5a3a24', skin: '#f0c8a0', helmet: null, scarf: '#ffbd38', backpack: false, hat: 'wide', hair: '#d8d8d8' }, 0.9);
+    this.npc('Prof. Hollis', 'Curator · Museum', -12, 13.2, { skin: '#f0c8a0', face: 'smile', hair: 'short', hairColor: '#d8d8d8', outfit: 'vest', top: '#2c6e5a', inner: '#fff4dc', pants: '#5a3a24', scarf: '#ffbd38', hat: 'beanie', hatColor: '#8a5a32', backpack: false }, 0.9);
     this.interactables.push({ id: 'museum', kind: 'museum', pos: new THREE.Vector3(-11.2, 0, 14.4), radius: 3, active: true });
     // museum display stands (outside the tent) with relic shards
     BIOME_ORDER.forEach((b, bi) => {
@@ -791,7 +844,7 @@ export class World {
     board.position.set(-6, 0, 14);
     board.rotation.y = 0.5;
     this.biomeGroups.meadow.add(board);
-    this.npc('Pip', 'Cartographer · Contracts', -4.6, 13.2, { jacket: '#2f6fd0', pants: '#3b2b22', skin: '#ffd9a8', helmet: '#ffbd38', scarf: '#ff7a2e', backpack: true }, 0.4);
+    this.npc('Pip', 'Cartographer · Contracts', -4.6, 13.2, { skin: '#ffd9a8', face: 'smile', hair: 'spiky', hairColor: '#e8a33a', outfit: 'jacket', top: '#2f6fd0', inner: '#ffbd38', pants: '#3b2b22', scarf: '#ff7a2e', hat: 'helmet', hatColor: '#ffbd38', backpack: true }, 0.4);
     this.interactables.push({ id: 'contracts', kind: 'contracts', pos: new THREE.Vector3(-4.2, 0, 11.6), radius: 2.6, active: true });
     // Surveyor (site renewal)
     const tripod = new THREE.Group();
@@ -799,7 +852,7 @@ export class World {
     for (let i = 0; i < 3; i++) add(tripod, cachedCyl(0.04, 0.04, 1.4, 5), lam('#7a5236'), Math.cos(i * 2.1) * 0.25, 0.65, Math.sin(i * 2.1) * 0.25, Math.sin(i * 2.1) * 0.3, 0, -Math.cos(i * 2.1) * 0.3);
     add(tripod, rb(0.3, 0.22, 0.4, 0.05), lam('#ffbd38'), 0, 1.4, 0);
     st.add(tripod);
-    this.npc('Juno', 'Surveyor · Renew sites', 13, 13.2, { jacket: '#78ae48', pants: '#5a3a24', skin: '#a8754a', helmet: '#16cdbb', scarf: '#9462f5', backpack: true }, -0.8);
+    this.npc('Juno', 'Surveyor · Renew sites', 13, 13.2, { skin: '#a8754a', face: 'cool', hair: 'swoop', hairColor: '#2a2024', outfit: 'vest', top: '#3a6a30', inner: '#c8f0a0', pants: '#5a3a24', scarf: '#9462f5', hat: 'cap', hatColor: '#16cdbb', backpack: true }, -0.8);
     this.interactables.push({ id: 'surveyor', kind: 'surveyor', pos: new THREE.Vector3(12.2, 0, 11.8), radius: 2.6, active: true });
     // Outfitter (cosmetics)
     const wardrobe = new THREE.Group();
@@ -1130,7 +1183,37 @@ export class World {
   }
 
   // ───────── Per-frame ─────────
+  private buildPollen() {
+    const n = 140;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 40; pos[i * 3 + 1] = 0.3 + Math.random() * 4; pos[i * 3 + 2] = (Math.random() - 0.5) * 40; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.PointsMaterial({ color: '#fff6c8', size: 0.16, map: softDot(), alphaTest: 0.01, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.pollen = new THREE.Points(g, m);
+    this.pollen.frustumCulled = false;
+    this.scene.add(this.pollen);
+  }
+
   update(dt: number, time: number, player: THREE.Vector3) {
+    this.skyTime.value = time;
+    if (!this.pollen) this.buildPollen();
+    {
+      const p = this.pollen!.geometry.attributes.position as THREE.BufferAttribute;
+      const a = p.array as Float32Array;
+      for (let i = 0; i < p.count; i++) {
+        let x = a[i * 3] + Math.sin(time * 0.6 + i) * dt * 0.4 + dt * 0.25;
+        let y = a[i * 3 + 1] + Math.sin(time * 0.9 + i * 1.7) * dt * 0.15;
+        let z = a[i * 3 + 2] + Math.cos(time * 0.5 + i) * dt * 0.4;
+        if (x - player.x > 20) x -= 40; else if (x - player.x < -20) x += 40;
+        if (z - player.z > 20) z -= 40; else if (z - player.z < -20) z += 40;
+        if (y < 0.2 || y > 5) y = 0.3 + ((i * 37) % 40) / 10;
+        a[i * 3] = x; a[i * 3 + 1] = y; a[i * 3 + 2] = z;
+      }
+      p.needsUpdate = true;
+      const b = this.biomeAt(player.x, player.z);
+      (this.pollen!.material as THREE.PointsMaterial).color.set(b === 'ember' ? '#ffb070' : b === 'crystal' ? '#d8c0ff' : b === 'aurora' ? '#9ff6ff' : '#fff6c8');
+    }
     this.grassUniform.value = time;
     for (const m of this.waterMats) m.uniforms.uTime.value = time;
     for (const f of this.flags) f.rotation.y = Math.sin(time * 2 + f.id) * 0.25;
@@ -1309,4 +1392,20 @@ export function groundTexture(): THREE.Texture {
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = 4;
   return groundTex;
+}
+
+let dotTex: THREE.Texture | null = null;
+function softDot(): THREE.Texture {
+  if (dotTex) return dotTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.4, 'rgba(255,255,255,.5)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  dotTex = new THREE.CanvasTexture(c);
+  return dotTex;
 }

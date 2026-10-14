@@ -75,7 +75,7 @@ export interface BiomeDef {
 export const BIOMES: Record<BiomeId, BiomeDef> = {
   meadow: {
     id: 'meadow', name: 'Meadow Camp', baseHp: 20, baseValue: 5, unlockCost: 0, relicReq: null,
-    center: [0, 0], half: 40, ground: '#5fb034', ground2: '#6cbd3e', fog: '#cdeaf7', sky: '#4aa8ee',
+    center: [0, 0], half: 40, ground: '#5fb034', ground2: '#6cbd3e', fog: '#c4e8fb', sky: '#2c8ae6',
     layers: { top: 'm_turf', upper: 'm_soil', mid: 'm_clay', deep: 'm_stone', node: 'm_copper', rare: 'm_copper' },
     egg: 'meadow',
   },

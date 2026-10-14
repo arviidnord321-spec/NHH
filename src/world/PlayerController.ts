@@ -5,7 +5,8 @@
  */
 import * as THREE from 'three';
 import { MOVE } from '../data/balance';
-import { buildHuman, buildLanternTool, buildPickaxe, buildShovel, HumanRig } from './models';
+import { buildLanternTool, buildPickaxe, buildShovel, HumanRig } from './models';
+import { buildAvatar, DEFAULT_AVATAR, type AvatarLook } from './avatar';
 import { angleDiff, World } from './World';
 
 const SUB = 0.05;
@@ -28,18 +29,31 @@ export class PlayerController {
   readonly visualPos = new THREE.Vector3();
 
   constructor(private world: World) {
-    this.rig = buildHuman({ jacket: '#f07a2a', pants: '#3a3f4f', skin: '#ffd9a8', helmet: '#ffbd38', scarf: '#16cdbb', backpack: true }, true);
-    this.rig.root.scale.setScalar(MOVE.height / 2.0);
     this.lantern = new THREE.PointLight('#ffd27a', 0, 9, 1.4);
     this.lantern.position.set(0, 2.2, 0.6);
-    this.rig.root.add(this.lantern);
-    world.scene.add(this.rig.root);
+    this.rig = this.makeRig(DEFAULT_AVATAR);
   }
 
-  setLook(helmet: string, scarf: string, crown: boolean) {
-    this.rig.helmet.material = new THREE.MeshStandardMaterial({ color: helmet, roughness: 0.35 });
-    for (const s of this.rig.scarf) s.material = new THREE.MeshStandardMaterial({ color: scarf, roughness: 0.62 });
+  private makeRig(look: AvatarLook): HumanRig {
+    const rig = buildAvatar(look);
+    rig.root.scale.setScalar(MOVE.height / 2.0);
+    rig.root.add(this.lantern);
+    this.world.scene.add(rig.root);
+    return rig;
+  }
+
+  /** Rebuild the avatar (keeps position, facing and held tool). */
+  applyAvatar(look: AvatarLook, crown: boolean) {
+    const old = this.rig;
+    old.root.removeFromParent();
+    this.rig = this.makeRig(look);
+    this.rig.root.position.copy(old.root.position);
+    this.rig.root.rotation.copy(old.root.rotation);
     this.rig.crown.visible = crown;
+    const key = this.toolKey;
+    this.toolKey = '';
+    this.toolModel = null;
+    if (key) this.setTool(key.replace(/\d+$/, '') as 'shovel' | 'pickaxe' | 'lantern', +(key.match(/\d+$/)?.[0] ?? 0));
   }
 
   setTool(kind: 'shovel' | 'pickaxe' | 'lantern', tier: number) {

@@ -160,7 +160,7 @@ export function compactRig(root: THREE.Object3D): void {
     const buckets = new Map<THREE.Material, { meshes: THREE.Mesh[]; shared: boolean }>();
     for (const c of g.children) {
       const m = c as THREE.Mesh;
-      if (!m.isMesh || m.userData.keep || Array.isArray(m.material) || m.children.length) continue;
+      if (!m.isMesh || m.userData.keep || Array.isArray(m.material) || m.children.length || !m.geometry.attributes.position) continue;
       const shared = sharedVertexMaterial(m.material);
       const key = shared ?? m.material;
       const b = buckets.get(key) ?? { meshes: [], shared: !!shared };

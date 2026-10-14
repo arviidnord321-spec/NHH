@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR, sanitizeAvatar, type AvatarLook } from './avatarData';
 import {
   BAGS, BIOME_ORDER, BiomeId, CAPS, COLLECTIBLE_BY_ID, COSMETICS, EGG_BY_ID, MATERIAL_BY_ID, PET_ENTRY_BY_ID,
   QUEST_CHAIN, QualityLevel, SAVE, TOOLS, ACHIEVEMENTS,
@@ -83,6 +84,8 @@ export interface SaveData {
   contractsDone: number;
   contractSeed: number;
   cosmetics: { owned: string[]; helmet: string; scarf: string; crown: boolean };
+  avatar: AvatarLook;
+  cameraFirstPerson: boolean;
   sites: Record<string, SiteState>;
   settings: Settings;
   golemCounter: number;
@@ -129,6 +132,8 @@ export function createDefaultSave(seed = Date.now() >>> 0): SaveData {
     contractsDone: 0,
     contractSeed: (seed ^ 0x51ed270b) >>> 0,
     cosmetics: { owned: ['helmet_default', 'scarf_default'], helmet: 'helmet_default', scarf: 'scarf_default', crown: false },
+    avatar: { ...DEFAULT_AVATAR },
+    cameraFirstPerson: false,
     sites: {},
     settings: defaultSettings(),
     golemCounter: 0,
@@ -253,6 +258,8 @@ export function validateSave(raw: unknown): ValidateResult {
   d.cosmetics.helmet = d.cosmetics.owned.includes(String(cos.helmet)) && String(cos.helmet).startsWith('helmet') ? String(cos.helmet) : 'helmet_default';
   d.cosmetics.scarf = d.cosmetics.owned.includes(String(cos.scarf)) && String(cos.scarf).startsWith('scarf') ? String(cos.scarf) : 'scarf_default';
   d.cosmetics.crown = bool(cos.crown, false) && d.finalClaimed;
+  d.avatar = sanitizeAvatar(r.avatar);
+  d.cameraFirstPerson = bool(r.cameraFirstPerson, false);
 
   for (const [k, v] of Object.entries(obj(r.sites))) {
     if (!/^(meadow|crystal|ember|aurora)_\d$/.test(k)) continue;

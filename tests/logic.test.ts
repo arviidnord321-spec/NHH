@@ -335,3 +335,21 @@ describe('site generation', () => {
     expect(a.treasures.map((t) => t.cell)).not.toEqual(b.treasures.map((t) => t.cell));
   });
 });
+
+import { sanitizeAvatar, DEFAULT_AVATAR } from '../src/core/avatarData';
+describe('avatar', () => {
+  it('sanitizes untrusted avatar data and round-trips through saves', () => {
+    expect(sanitizeAvatar(null)).toEqual(DEFAULT_AVATAR);
+    const a = sanitizeAvatar({ skin: '#123456', face: 'nope', hair: 'spiky', scarf: '', top: 'red', backpack: false });
+    expect(a.skin).toBe('#123456');
+    expect(a.face).toBe(DEFAULT_AVATAR.face);
+    expect(a.hair).toBe('spiky');
+    expect(a.scarf).toBe('');
+    expect(a.top).toBe(DEFAULT_AVATAR.top);
+    expect(a.backpack).toBe(false);
+    const s = createDefaultSave(1);
+    s.avatar = a; s.cameraFirstPerson = true;
+    const r = validateSave(JSON.parse(JSON.stringify(s)));
+    expect(r.ok && r.data.avatar.hair === 'spiky' && r.data.cameraFirstPerson).toBe(true);
+  });
+});

@@ -15,11 +15,13 @@ import type { Game } from '../Game';
 import type { Interactable } from '../world/World';
 import type { HatchOptions, HatchPhase } from './Showcase';
 import { UI_ART } from './assets';
+import { buildAvatar, faceTexture } from '../world/avatar';
+import { AVATAR_OPTIONS, DEFAULT_AVATAR, type AvatarLook } from '../core/avatarData';
 import {
   buildBackpackIcon, buildChest, buildCoinFace, buildTent, buildGemIcon, buildLanternTool, buildPickaxe, buildScanner, buildScrollIcon, buildShovel,
 } from '../world/models';
 
-type PanelName = 'pets' | 'eggs' | 'upgrades' | 'museum' | 'quests' | 'settings' | 'sell' | 'gate' | 'contracts' | 'surveyor' | 'cosmetics' | 'confirm' | 'help';
+type PanelName = 'avatar' | 'pets' | 'eggs' | 'upgrades' | 'museum' | 'quests' | 'settings' | 'sell' | 'gate' | 'contracts' | 'surveyor' | 'cosmetics' | 'confirm' | 'help';
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const fmt = (n: number) => Math.floor(n).toLocaleString('en-US');
@@ -74,6 +76,7 @@ export class UIManager {
     this.icons.upgrades = sc.iconOf('upg', () => { const o = buildPickaxe(2); o.rotation.z = -0.7; o.position.y = 0.6; const w = new THREE.Group(); w.add(o); return w; }, 2.8, 0.15, 128, 0.9);
     this.icons.museum = sc.iconOf('museum', () => buildChest('relic'), 2.0, 0.4, 128, 0.5);
     this.icons.quests = sc.iconOf('quests', buildScrollIcon, 2.0, 0.3, 128, 0.3);
+    this.icons.avatar = sc.iconOf('avatarHead', () => buildAvatar(DEFAULT_AVATAR).root, 1.7, 2.02, 160, 0.35);
     this.icons.bag = sc.iconOf('bag', buildBackpackIcon, 2.6, 0.45, 128, 0.5);
     this.icons.tent = sc.iconOf('tent', () => { const t = buildTent('#ff7a2a'); t.scale.setScalar(0.42); return t; }, 3.4, 0.45, 128, 0.7);
     this.icons.fossil = sc.iconOf('fossil', () => buildChest('fossil'), 2.0, 0.2, 96, 0.4);
@@ -101,6 +104,7 @@ export class UIManager {
         <div class="scan-hud hidden" id="scanhud"><div class="arrow" id="scanarrow">➤</div><div class="scan-info"><div id="scandepth"></div><div class="meter"><i id="scanmeter"></i></div></div></div>
       </div>
       <div class="tr">
+        <button class="bubble-btn small" id="btn-view" aria-label="Toggle first person view (V)" title="First / third person (V)">${SVG_EYE}</button>
         <button class="art-btn small" id="btn-sound" aria-label="Toggle sound"><img alt="" id="soundimg" src="${A.btnSoundOn}"></button>
         <button class="art-btn small" id="btn-settings" aria-label="Settings"><img alt="" src="${A.btnSettings}"></button>
       </div>
@@ -111,6 +115,7 @@ export class UIManager {
           <button class="art-btn menu" data-open="upgrades" aria-label="Upgrades"><img alt="" src="${A.btnUpgrades}"></button>
           <button class="art-btn menu" data-open="museum" aria-label="Museum"><img alt="" src="${A.btnMuseum}"></button>
           <button class="art-btn menu" data-open="quests" aria-label="Quests"><img alt="" src="${A.btnQuests}"></button>
+          <button class="bubble-btn menu teal" data-open="avatar" aria-label="Avatar"><img alt="" src="${this.icons.avatar}"><span>AVATAR</span><kbd>C</kbd></button>
         </div>
       </div>
       <div class="bc">
@@ -124,6 +129,7 @@ export class UIManager {
       <button class="bar9 camp-btn" id="campbtn" style="border-image-source:url(${A.campBtn})"><span class="lbl">RETURN TO CAMP</span><kbd>R</kbd></button>
       <div class="target-card hidden" id="target" style="background-image:url(${A.targetCard})"><b id="tname"></b><div class="hp"><i id="thp"></i></div><small id="tsub"></small></div>
       <div class="hint hidden" id="hint"></div>
+      <div class="crosshair hidden" id="crosshair"></div>
       <div class="banner hidden" id="banner"></div>
       <div class="toasts" id="toasts" aria-live="polite"></div>
       <div class="floaters" id="floaters"></div>
@@ -136,6 +142,7 @@ export class UIManager {
     h.querySelectorAll<HTMLButtonElement>('[data-slot]').forEach((b) => b.addEventListener('click', () => this.g.selectTool(+b.dataset.slot!)));
     this.els.campbtn.addEventListener('click', () => this.g.returnToCamp());
     this.els['btn-settings'].addEventListener('click', () => this.open('settings'));
+    this.els['btn-view'].addEventListener('click', () => this.g.setView(!this.g.cam.firstPerson));
     this.els['btn-sound'].addEventListener('click', () => {
       this.g.s.settings.muted = !this.g.s.settings.muted;
       this.g.applySettings();
@@ -203,7 +210,7 @@ export class UIManager {
   private updateHint() {
     const s = this.g.s;
     let hint = '';
-    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <kbd>Dig</kbd>' : 'Hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> to move &nbsp;•&nbsp; <kbd>Right-drag</kbd> to look';
+    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <kbd>Dig</kbd>' : this.g.cam?.firstPerson ? 'Click to look around &nbsp;•&nbsp; <kbd>LMB</kbd> dig &nbsp;•&nbsp; <kbd>WASD</kbd> move &nbsp;•&nbsp; <kbd>V</kbd> third person' : 'Hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> move &nbsp;•&nbsp; <kbd>Right-drag</kbd> look &nbsp;•&nbsp; <kbd>V</kbd> first person';
     else if (s.stats.cells < 5) hint = `Keep digging! ${5 - s.stats.cells} more cell${5 - s.stats.cells === 1 ? '' : 's'}`;
     else if (!s.starterHatched) hint = 'A <b>Starter Egg</b> appeared beside the dig site — walk over and press <b>E</b>';
     else if (s.stats.sells === 0) hint = L.bagCount(s) >= L.bagCapacity(s) ? 'Bag full! Press <b>R</b> to return to camp, then sell to <b>Mara</b>' : 'Fill your bag, then sell to <b>Mara</b> at camp (<b>R</b> returns to camp)';
@@ -257,6 +264,13 @@ export class UIManager {
     } else this.els.target.classList.add('hidden');
     if (this.scanMsgT > 0) { this.scanMsgT -= dt; if (this.scanMsgT <= 0 && !this.signalDepth) this.els.scanhud.classList.add('hidden'); }
     this.toastTimer += dt;
+  }
+
+  setFirstPerson(fp: boolean) {
+    this.updateHint();
+    this.els.crosshair.classList.toggle('hidden', !fp);
+    this.els['btn-view'].classList.toggle('on', fp);
+    this.els['btn-view'].setAttribute('aria-pressed', String(fp));
   }
 
   setDebug(text: string) {
@@ -403,7 +417,7 @@ export class UIManager {
       case 'museum': return 'Museum';
       case 'contracts': return 'Expedition contracts';
       case 'surveyor': return 'Renew dig sites';
-      case 'cosmetics': return 'Outfitter (cosmetics)';
+      case 'cosmetics': return 'Outfitter — design your avatar';
       case 'gate': return `${BIOMES[it.data as BiomeId].name} gate`;
       case 'chamber': return s.displaysClaimed.includes(it.data as BiomeId) ? 'Open the secret cache' : 'Sealed chamber';
       case 'final': return 'Star Monument';
@@ -420,7 +434,7 @@ export class UIManager {
       case 'museum': this.open('museum'); break;
       case 'contracts': this.open('contracts'); break;
       case 'surveyor': this.open('surveyor'); break;
-      case 'cosmetics': this.open('cosmetics'); break;
+      case 'cosmetics': this.open('avatar'); break;
       case 'gate': this.open('gate', it.data); break;
       case 'starterEgg': this.g.hatchStarter(); break;
       case 'chamber': {
@@ -448,6 +462,7 @@ export class UIManager {
   // ───────── panels ─────────
   open(name: PanelName, data?: any) {
     if (this.hatchActive) return;
+    if (this.panel === 'avatar' && name !== 'avatar') this.g.showcase.detachPreview();
     this.panel = name;
     this.panelData = data ?? null;
     if (name === 'pets') { this.mergeSel = []; }
@@ -462,6 +477,7 @@ export class UIManager {
 
   close() {
     if (!this.panel) return;
+    if (this.panel === 'avatar') this.g.showcase.detachPreview();
     this.panel = null;
     this.inspectId = null;
     this.modal.classList.add('hidden');
@@ -485,6 +501,10 @@ export class UIManager {
     this.justOpened = false;
     const body = this.modal.querySelector('.body');
     if (body) body.scrollTop = scroll;
+    if (this.panel === 'avatar') {
+      const stage = this.modal.querySelector('#avstage') as HTMLElement | null;
+      if (stage) this.g.showcase.attachPreview(stage, this.g.s.avatar, this.g.s.cosmetics.crown);
+    }
   }
 
   private head(title: string, sub = '') {
@@ -493,6 +513,7 @@ export class UIManager {
 
   private renderPanel(p: PanelName): string {
     switch (p) {
+      case 'avatar': return this.renderAvatar();
       case 'pets': return this.renderPets();
       case 'eggs': return this.renderEggs();
       case 'upgrades': return this.renderUpgrades();
@@ -507,6 +528,49 @@ export class UIManager {
       case 'confirm': return this.renderConfirm();
       case 'help': return this.renderHelp();
     }
+  }
+
+  // ── Avatar designer ──
+  private renderAvatar(): string {
+    const s = this.g.s;
+    const a = s.avatar;
+    const O = AVATAR_OPTIONS;
+    const label: Record<string, string> = { swoop: 'Swoop', short: 'Short', spiky: 'Spiky', bob: 'Bob', ponytail: 'Ponytail', bald: 'None', vest: 'Vest', jacket: 'Jacket', hoodie: 'Hoodie', tee: 'Tee', none: 'None', helmet: 'Miner helmet', cap: 'Cap', beanie: 'Beanie' };
+    const sw = (k: keyof AvatarLook, list: string[]) => list.map((c) => `<button class="sw-btn ${a[k] === c ? 'on' : ''}" data-act="av" data-k="${k}" data-v="${c}" style="--c:${c || 'transparent'}" aria-label="${k} ${c || 'none'}">${c ? '' : '✕'}</button>`).join('');
+    const chips = (k: keyof AvatarLook, list: string[]) => list.map((v) => `<button class="chip ${a[k] === v ? 'on' : ''}" data-act="av" data-k="${k}" data-v="${v}">${label[v] ?? v}</button>`).join('');
+    const faces = O.face.map((f) => `<button class="face-btn ${a.face === f ? 'on' : ''}" data-act="av" data-k="face" data-v="${f}" aria-label="Face ${f}"><img alt="" src="${(faceTexture(f).image as HTMLCanvasElement).toDataURL()}"></button>`).join('');
+    // gem-unlocked colours
+    const gem = COSMETICS.filter((c) => c.purchasable && c.gems > 0).map((c) => {
+      const own = s.cosmetics.owned.includes(c.id);
+      const k = c.slot === 'helmet' ? 'hatColor' : 'scarf';
+      return `<button class="sw-btn gem ${(a as any)[k] === c.color ? 'on' : ''}" data-act="${own ? 'av' : 'avbuy'}" data-k="${k}" data-v="${c.color}" data-id="${c.id}" style="--c:${c.color}" title="${esc(c.name)}${own ? '' : ` · ${c.gems} gems`}">${own ? '' : `<em>${c.gems}</em>`}</button>`;
+    }).join('');
+    const crown = s.cosmetics.owned.includes('crown_aurora') ? `<label class="srow"><span>Aurora crown</span><input type="checkbox" data-act="avcrown" ${s.cosmetics.crown ? 'checked' : ''}></label>` : '';
+    return `${this.head('AVATAR', 'Design your explorer · changes save instantly')}
+      <div class="avatar-layout">
+        <div class="av-left"><div class="av-stage" id="avstage" title="Drag to spin"></div>
+          <div class="row" style="justify-content:center"><button class="btn" data-act="avrand">🎲 Randomize</button><button class="btn" data-act="avreset">Reset</button></div></div>
+        <div class="body av-opts">
+          <h3>Face</h3><div class="opt">${faces}</div>
+          <h3>Skin</h3><div class="opt">${sw('skin', O.skin)}</div>
+          <h3>Hair</h3><div class="opt">${chips('hair', O.hair)}</div><div class="opt">${sw('hairColor', O.hairColor)}</div>
+          <h3>Outfit</h3><div class="opt">${chips('outfit', O.outfit)}</div>
+          <div class="opt lbl"><span>Top</span>${sw('top', O.top)}</div>
+          <div class="opt lbl"><span>Shirt</span>${sw('inner', O.inner)}</div>
+          <div class="opt lbl"><span>Pants</span>${sw('pants', O.pants)}</div>
+          <div class="opt lbl"><span>Shoes</span>${sw('shoes', O.shoes)}</div>
+          <div class="opt lbl"><span>Scarf</span>${sw('scarf', O.scarf)}</div>
+          <h3>Hat</h3><div class="opt">${chips('hat', O.hat)}</div><div class="opt">${sw('hatColor', O.hatColor)}</div>
+          <h3>Gem styles</h3><p class="note">Special hat and scarf colours bought with gems (${fmt(s.gems)} gems).</p><div class="opt">${gem}</div>
+          <h3>Gear</h3><label class="srow"><span>Backpack</span><input type="checkbox" data-act="avpack" ${a.backpack ? 'checked' : ''}></label>${crown}
+        </div>
+      </div>`;
+  }
+
+  private setAvatar(patch: Partial<AvatarLook>) {
+    Object.assign(this.g.s.avatar, patch);
+    this.g.refreshPlayerLook();
+    this.g.persist();
   }
 
   // ── Pets ──
@@ -733,7 +797,7 @@ export class UIManager {
     const rows = [
       ['Move', 'WASD / Arrows', 'Left stick'], ['Look', 'Right-mouse drag · wheel zoom', 'Drag right side'], ['Dig', 'Hold left mouse on terrain', 'Hold Dig (center reticle)'],
       ['Jump', 'Space', 'Jump'], ['Sprint', 'Shift', 'Push stick far'], ['Interact / Uncover', 'E (hold to uncover)', 'Use'], ['Echo Scan', 'Q', 'Scan'],
-      ['Return to camp', 'R', 'Camp button'], ['Tools', '1–4', 'Tap hotbar'], ['Pets', 'P', 'Pets button'], ['Close / Settings', 'Esc', '✕ / ⚙'],
+      ['Return to camp', 'R', 'Camp button'], ['First / third person', 'V or scroll all the way in', 'Eye button'], ['Avatar designer', 'C', 'Avatar button'], ['Tools', '1–4', 'Tap hotbar'], ['Pets', 'P', 'Pets button'], ['Close / Settings', 'Esc', '✕ / ⚙'],
     ];
     return `${this.head('CONTROLS')}<div class="body"><table class="controls"><tr><th>Action</th><th>Desktop</th><th>Touch</th></tr>${rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table>
       <button class="btn" data-act="back" data-to="settings">Back</button></div>`;
@@ -874,6 +938,20 @@ export class UIManager {
     const fail = (r: { ok: boolean; reason?: string }) => { if (!r.ok) { this.toast(r.reason!, 'warn'); this.g.audio.play('deny'); return true; } return false; };
     switch (act) {
       case 'close': this.close(); return;
+      case 'av': { const k = t.dataset.k as keyof AvatarLook; this.setAvatar({ [k]: t.dataset.v } as Partial<AvatarLook>); this.g.audio.play('pop'); break; }
+      case 'avbuy': {
+        const r = L.buyCosmetic(s, t.dataset.id!);
+        if (!fail(r)) { this.g.audio.play('unlock'); this.setAvatar({ [t.dataset.k as keyof AvatarLook]: t.dataset.v } as Partial<AvatarLook>); this.g.changed(); }
+        break;
+      }
+      case 'avrand': {
+        const O = AVATAR_OPTIONS;
+        const r = <T,>(l: readonly T[]) => l[Math.floor(Math.random() * l.length)];
+        this.setAvatar({ skin: r(O.skin), face: r(O.face), hair: r(O.hair), hairColor: r(O.hairColor), outfit: r(O.outfit), top: r(O.top), inner: r(O.inner), pants: r(O.pants), shoes: r(O.shoes), scarf: r(O.scarf), hat: r(O.hat), hatColor: r(O.hatColor) });
+        this.g.audio.play('pop');
+        break;
+      }
+      case 'avreset': this.setAvatar({ ...DEFAULT_AVATAR }); break;
       case 'inspect': this.inspectId = id; this.g.audio.play('click'); break;
       case 'equip': if (!fail(L.equipPet(s, id))) { this.g.syncPets(); this.g.changed(); } break;
       case 'unequip': L.unequipPet(s, id); this.g.syncPets(); this.g.changed(); break;
@@ -945,6 +1023,8 @@ export class UIManager {
   private onModalChange(e: Event) {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
     const act = t.dataset.act;
+    if (act === 'avpack') { this.setAvatar({ backpack: (t as HTMLInputElement).checked }); this.render(); return; }
+    if (act === 'avcrown') { this.g.s.cosmetics.crown = (t as HTMLInputElement).checked; this.g.refreshPlayerLook(); this.g.persist(); this.render(); return; }
     if (act === 'sort') { this.petSort = t.value as any; this.render(); return; }
     if (act === 'filter') { this.petFilter = t.value; this.render(); return; }
     const key = t.dataset.set as keyof typeof this.g.s.settings | undefined;
@@ -967,6 +1047,8 @@ export class UIManager {
     }
   }
 }
+
+const SVG_EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="#fff"/><circle cx="12" cy="12" r="3.6" fill="#2563d4"/><circle cx="13.2" cy="10.8" r="1.2" fill="#fff"/></svg>';
 
 function div(cls: string) {
   const d = document.createElement('div');

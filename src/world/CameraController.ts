@@ -15,11 +15,17 @@ export class CameraController {
   private tmp = new THREE.Vector3();
   private dir = new THREE.Vector3();
   shake = 0;
+  /** set when a scroll changed the view mode (consumed by the game) */
+  zoomedIn = false;
+  zoomedOut = false;
   private autoPitch = 0.44;
   /** true when the camera is so close the avatar should be hidden */
   tooClose = false;
   shakeEnabled = true;
   readonly minDist = 3.5;
+  /** first-person view from the avatar's eyes */
+  firstPerson = false;
+  private fpYawFix = 0;
   readonly maxDist = 13;
 
   constructor(private world: World, aspect: number) {
@@ -32,9 +38,33 @@ export class CameraController {
     this.apply(0, true);
   }
 
+  /** Switch views; returns the new mode. */
+  setFirstPerson(on: boolean) {
+    if (on === this.firstPerson) return on;
+    this.firstPerson = on;
+    this.pitch = on ? 0.18 : 0.44;
+    this.autoPitch = this.pitch;
+    if (!on) this.distance = Math.max(this.distance, this.minDist + 1.5);
+    void this.fpYawFix;
+    return on;
+  }
+
   update(dt: number, player: THREE.Vector3, lookDx: number, lookDy: number, zoom: number) {
     this.yaw -= lookDx * 0.006;
+    if (this.firstPerson) {
+      this.pitch = Math.min(1.4, Math.max(-1.35, this.pitch + lookDy * 0.005));
+      if (zoom > 0) { this.setFirstPerson(false); this.zoomedOut = true; }
+      const cam = this.camera;
+      cam.position.set(player.x, player.y + 1.86, player.z);
+      const cp = Math.cos(this.pitch);
+      this.dir.set(-Math.sin(this.yaw) * cp, -Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
+      cam.lookAt(cam.position.x + this.dir.x, cam.position.y + this.dir.y, cam.position.z + this.dir.z);
+      this.tooClose = true;
+      this.target.set(player.x, player.y + 1.5, player.z);
+      return;
+    }
     this.pitch = Math.min(1.25, Math.max(0.05, this.pitch + lookDy * 0.005));
+    if (zoom < 0 && this.distance <= this.minDist + 0.01) { this.setFirstPerson(true); this.zoomedIn = true; return; }
     if (zoom) this.distance = Math.min(this.maxDist, Math.max(this.minDist, this.distance + zoom * 0.8));
     const ty = player.y + 1.5;
     this.target.x = player.x;
