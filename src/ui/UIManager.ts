@@ -15,7 +15,7 @@ import type { Game } from '../Game';
 import type { Interactable } from '../world/World';
 import type { HatchOptions, HatchPhase } from './Showcase';
 import {
-  buildBackpackIcon, buildChest, buildCoinStack, buildGemIcon, buildLanternTool, buildPickaxe, buildScanner, buildScrollIcon, buildShovel,
+  buildBackpackIcon, buildChest, buildCoinFace, buildTent, buildGemIcon, buildLanternTool, buildPickaxe, buildScanner, buildScrollIcon, buildShovel,
 } from '../world/models';
 
 type PanelName = 'pets' | 'eggs' | 'upgrades' | 'museum' | 'quests' | 'settings' | 'sell' | 'gate' | 'contracts' | 'surveyor' | 'cosmetics' | 'confirm' | 'help';
@@ -45,6 +45,7 @@ export class UIManager {
   private icons: Record<string, string> = {};
   private menuOpen = false;
   private justOpened = false;
+  private hudZoom = 1;
 
   constructor(private root: HTMLElement, private g: Game) {
     this.root.innerHTML = '';
@@ -53,6 +54,7 @@ export class UIManager {
     this.root.append(this.hud, this.modal);
     this.makeIcons();
     this.buildHud();
+    this.onResize();
     this.modal.addEventListener('click', (e) => this.onModalClick(e));
     this.modal.addEventListener('change', (e) => this.onModalChange(e));
     this.modal.addEventListener('input', (e) => this.onModalInput(e));
@@ -61,8 +63,8 @@ export class UIManager {
 
   private makeIcons() {
     const sc = this.g.showcase;
-    this.icons.coin = sc.iconOf('coin', buildCoinStack, 2.6, 0.3, 96, 0.4);
-    this.icons.gem = sc.iconOf('gem', buildGemIcon, 2.2, 0.35, 96, 0.3);
+    this.icons.coin = sc.iconOf('coin', buildCoinFace, 1.55, 0.4, 128, 0.3);
+    this.icons.gem = sc.iconOf('gem', buildGemIcon, 1.5, 0.38, 128, 0.3);
     this.icons.shovel = sc.iconOf(`shovel${this.g.s.toolTier}`, () => { const o = buildShovel(this.g.s.toolTier); o.rotation.z = 0.7; const w = new THREE.Group(); w.add(o); o.position.y = 0.4; return w; }, 3.2, 0.1, 96, 0.4);
     this.icons.pickaxe = sc.iconOf(`pick${this.g.s.toolTier}`, () => { const o = buildPickaxe(this.g.s.toolTier); o.rotation.z = -0.6; const w = new THREE.Group(); w.add(o); o.position.y = 0.7; return w; }, 3.0, 0.1, 96, 0.9);
     this.icons.lantern = sc.iconOf('lantern', () => { const o = buildLanternTool(); o.scale.setScalar(2.2); o.position.y = 0.6; const w = new THREE.Group(); w.add(o); return w; }, 2.4, 0.3, 96, 0.4);
@@ -72,7 +74,8 @@ export class UIManager {
     this.icons.upgrades = sc.iconOf('upg', () => { const o = buildPickaxe(2); o.rotation.z = -0.7; o.position.y = 0.6; const w = new THREE.Group(); w.add(o); return w; }, 2.8, 0.15, 128, 0.9);
     this.icons.museum = sc.iconOf('museum', () => buildChest('relic'), 2.0, 0.4, 128, 0.5);
     this.icons.quests = sc.iconOf('quests', buildScrollIcon, 2.0, 0.3, 128, 0.3);
-    this.icons.bag = sc.iconOf('bag', buildBackpackIcon, 2.6, 0.45, 96, 0.5);
+    this.icons.bag = sc.iconOf('bag', buildBackpackIcon, 2.6, 0.45, 128, 0.5);
+    this.icons.tent = sc.iconOf('tent', () => { const t = buildTent('#ff7a2a'); t.scale.setScalar(0.42); return t; }, 3.4, 0.45, 128, 0.7);
     this.icons.fossil = sc.iconOf('fossil', () => buildChest('fossil'), 2.0, 0.2, 96, 0.4);
     this.icons.coins = sc.iconOf('chestCoins', () => buildChest('coins'), 2.4, 0.35, 96, 0.5);
     this.icons.geode = sc.iconOf('geodeChest', () => buildChest('geode'), 2.2, 0.4, 96, 0.5);
@@ -93,32 +96,32 @@ export class UIManager {
         <div class="pill gems" title="Gems"><img alt="" src="${this.icons.gem}"><span id="gems">0</span></div>
       </div>
       <div class="tc">
-        <button class="quest" id="quest" aria-label="Open quests"><img alt="" src="${this.icons.quests}"><span class="qtext" id="qtext"></span><span class="qprog" id="qprog"></span></button>
+        <button class="quest" id="quest" aria-label="Open quests"><img alt="" src="${this.icons.quests}"><span class="qtext" id="qtext"></span><span class="qprog" id="qprog"></span><span class="qbar"><i id="qbar"></i></span></button>
         <div class="scan-hud hidden" id="scanhud"><div class="arrow" id="scanarrow">➤</div><div class="scan-info"><div id="scandepth"></div><div class="meter"><i id="scanmeter"></i></div></div></div>
       </div>
       <div class="tr">
-        <button class="icon-btn" id="btn-sound" aria-label="Toggle sound">🔊</button>
-        <button class="icon-btn" id="btn-settings" aria-label="Settings">⚙</button>
+        <button class="icon-btn" id="btn-sound" aria-label="Toggle sound"></button>
+        <button class="icon-btn" id="btn-settings" aria-label="Settings">${SVG_GEAR}</button>
       </div>
       <div class="side" id="side">
         <button class="menu-toggle" id="menutoggle" aria-label="Menu">☰</button>
         <div class="side-list">
-          <button class="side-btn" data-open="pets"><img alt="" src="${this.icons.pets}"><span>Pets</span><kbd>P</kbd></button>
-          <button class="side-btn" data-open="eggs"><img alt="" src="${this.icons.eggs}"><span>Eggs</span></button>
-          <button class="side-btn" data-open="upgrades"><img alt="" src="${this.icons.upgrades}"><span>Upgrades</span></button>
-          <button class="side-btn small" data-open="museum"><img alt="" src="${this.icons.museum}"><span>Museum</span></button>
-          <button class="side-btn small" data-open="quests"><img alt="" src="${this.icons.quests}"><span>Quests</span></button>
+          <button class="side-btn b-pets" data-open="pets"><img alt="" src="${this.icons.pets}"><span>PETS</span></button>
+          <button class="side-btn b-eggs" data-open="eggs"><img alt="" src="${this.icons.eggs}"><span>EGGS</span></button>
+          <button class="side-btn b-upgrades" data-open="upgrades"><img alt="" src="${this.icons.upgrades}"><span>UPGRADES</span></button>
+          <button class="side-btn b-museum" data-open="museum"><img alt="" src="${this.icons.museum}"><span>MUSEUM</span></button>
+          <button class="side-btn b-quests" data-open="quests"><img alt="" src="${this.icons.quests}"><span>QUESTS</span></button>
         </div>
       </div>
       <div class="bc">
         <div class="prompt hidden" id="prompt"><span id="prompttext"></span><i id="promptbar"></i></div>
         <button class="sell-quick hidden" id="sellquick"></button>
-        <div class="bagbar" id="bagbar"><img alt="" src="${this.icons.bag}"><b>BACKPACK</b><span id="bagtext">0/20</span><div class="bagfill"><i id="bagfill"></i></div></div>
+        <div class="bagbar" id="bagbar"><img alt="" src="${this.icons.bag}"><b>BACKPACK</b><div class="bagfill"><i id="bagfill"></i></div><span id="bagtext">0 / 20</span></div>
         <div class="hotbar" id="hotbar">
           ${['shovel', 'pickaxe', 'lantern', 'scanner'].map((k, i) => `<button class="slot" data-slot="${i}" aria-label="${k}"><kbd>${i + 1}</kbd><img alt="" id="icon-${k}" src="${this.icons[k]}"><span>${k[0].toUpperCase() + k.slice(1)}</span><i class="cd" id="cd-${k}"></i></button>`).join('')}
         </div>
       </div>
-      <button class="camp-btn" id="campbtn"><span class="tent">⛺</span>RETURN TO CAMP <kbd>R</kbd></button>
+      <button class="camp-btn" id="campbtn"><img alt="" src="${this.icons.tent}"><span class="lbl">RETURN TO CAMP</span><kbd>R</kbd></button>
       <div class="target-card hidden" id="target"><b id="tname"></b><div class="hp"><i id="thp"></i></div><small id="tsub"></small></div>
       <div class="hint hidden" id="hint"></div>
       <div class="banner hidden" id="banner"></div>
@@ -144,7 +147,12 @@ export class UIManager {
     this.els.sellquick.addEventListener('click', () => this.g.sell());
   }
 
-  onResize() { /* layout is CSS-driven */ }
+  onResize() {
+    const w = this.root.clientWidth || window.innerWidth, h = this.root.clientHeight || window.innerHeight;
+    const z = Math.max(0.5, Math.min(1.15, Math.min(w / 1400, h / 790)));
+    document.documentElement.style.setProperty('--hudz', z.toFixed(3));
+    this.hudZoom = z;
+  }
 
   updateAll() {
     this.shownCoins = this.g.s.coins;
@@ -157,23 +165,27 @@ export class UIManager {
     const team = L.teamStats(s);
     const cap = L.bagCapacity(s, team);
     const n = L.bagCount(s);
-    this.els.bagtext.textContent = `${n}/${cap}`;
+    this.els.bagtext.textContent = `${n} / ${cap}`;
     this.els.bagfill.style.width = `${Math.min(100, (n / cap) * 100)}%`;
     this.els.bagbar.classList.toggle('full', n >= cap);
     const q = L.currentQuest(s);
     if (q) {
       this.els.qtext.textContent = q.text;
       this.els.qprog.textContent = q.target > 1 ? `${Math.min(s.questProgress, q.target)}/${q.target}` : '';
+      this.els.qbar.style.width = `${(Math.min(s.questProgress, q.target) / q.target) * 100}%`;
     } else if (s.contract) {
       const c = s.contract;
       this.els.qtext.textContent = contractText(c);
       this.els.qprog.textContent = `${c.progress}/${c.target}`;
+      this.els.qbar.style.width = `${(c.progress / c.target) * 100}%`;
     } else {
       const missing = BIOME_ORDER.find((b) => L.relicCount(s, b) < 3 && s.unlocked.includes(b));
       this.els.qtext.textContent = missing ? `Find ${BIOMES[missing].name} relic shards` : s.unlocked.length < 4 ? 'Open the next biome gate' : 'Collect every find for the museum';
       this.els.qprog.textContent = missing ? `${L.relicCount(s, missing)}/3` : '';
+      this.els.qbar.style.width = missing ? `${(L.relicCount(s, missing) / 3) * 100}%` : '100%';
     }
-    this.els['btn-sound'].textContent = this.g.audio.muted ? '🔇' : '🔊';
+    const soundSvg = this.g.audio.muted ? SVG_MUTED : SVG_SOUND;
+    if (this.els['btn-sound'].dataset.svg !== String(this.g.audio.muted)) { this.els['btn-sound'].dataset.svg = String(this.g.audio.muted); this.els['btn-sound'].innerHTML = soundSvg; }
     this.els['btn-sound'].setAttribute('aria-pressed', String(s.settings.muted));
     // hotbar
     const slots = this.els.hotbar.querySelectorAll<HTMLElement>('.slot');
@@ -194,7 +206,7 @@ export class UIManager {
   private updateHint() {
     const s = this.g.s;
     let hint = '';
-    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <b>Dig</b>' : 'Hold <b>left mouse</b> on the dig site ahead to dig · <b>WASD</b> move · <b>right-drag</b> look';
+    if (s.stats.cells === 0) hint = this.g.input.isTouch ? 'Aim the reticle at the dig site and hold <kbd>Dig</kbd>' : 'Hold <kbd>LMB</kbd> to dig &nbsp;•&nbsp; <kbd>WASD</kbd> to move &nbsp;•&nbsp; <kbd>Right-drag</kbd> to look';
     else if (s.stats.cells < 5) hint = `Keep digging! ${5 - s.stats.cells} more cell${5 - s.stats.cells === 1 ? '' : 's'}`;
     else if (!s.starterHatched) hint = 'A <b>Starter Egg</b> appeared beside the dig site — walk over and press <b>E</b>';
     else if (s.stats.sells === 0) hint = L.bagCount(s) >= L.bagCapacity(s) ? 'Bag full! Press <b>R</b> to return to camp, then sell to <b>Mara</b>' : 'Fill your bag, then sell to <b>Mara</b> at camp (<b>R</b> returns to camp)';
@@ -227,7 +239,7 @@ export class UIManager {
       const p = this.g.projectToScreen(t.center.clone().add(new THREE.Vector3(0, 0.8, 0)));
       const card = this.els.target;
       card.classList.remove('hidden');
-      card.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%)`;
+      card.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -100%) scale(${this.hudZoom})`;
       if (t.treasure) {
         this.els.tname.textContent = t.site.isExposed(t.cell) ? 'Buried find' : 'Hidden';
         this.els.thp.style.width = '100%';
@@ -958,6 +970,10 @@ export class UIManager {
     }
   }
 }
+
+const SVG_SOUND = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+const SVG_MUTED = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l6 6M22 9l-6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+const SVG_GEAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7c.1.6.1 1.3 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a6 6 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z" transform="translate(0 1)"/></svg>';
 
 function div(cls: string) {
   const d = document.createElement('div');

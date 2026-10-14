@@ -822,15 +822,19 @@ export function buildEgg(eggId: string, withBase = true): EggRig {
   };
 
   if (isStarter) {
-    band(bottom, 0.42, STARTER_EGG.accent, 0.05, { rough: 0.4 });
-    emblem(bottom, 0.42, '#fff4dc', '#ffbd38', true);
-    for (let i = 0; i < 6; i++) onShell(top, sphere(0.07, 5, 4), pm(STARTER_EGG.detail), 0.7, (i / 6) * Math.PI * 2, 0, 1, 1, 0.4);
-    const star = add(top, octa(0.14), mat('#ffbd38', { emissive: '#ffbd38', emissiveIntensity: 0.7, flat: true }), 0, 1.4, 0);
-    star.scale.set(1, 1.3, 0.5);
-    spinners.push(star);
+    const leaf = pm('#6cc046');
+    for (let i = 0; i < 10; i++) {
+      const t = 0.18 + ((i * 0.37) % 1) * 0.7;
+      onShell(t < EGG_SPLIT ? bottom : top, octa(0.13), leaf, t, i * 1.31, -0.02, 1.25, 1.0, 0.35, i);
+    }
+    add(top, cyl(0.03, 0.035, 0.2, 5), pm('#4f8a2e'), 0, 1.38, 0);
+    add(top, octa(0.12), leaf, -0.1, 1.48, 0, 0, 0, 0.9).scale.set(1, 0.4, 0.5);
+    add(top, octa(0.12), leaf, 0.1, 1.5, 0, 0, 0, -0.9).scale.set(1, 0.4, 0.5);
     if (withBase) {
-      add(base, cyl(0.7, 0.8, 0.3, 8), pm('#d8cdb8'), 0, -0.12, 0);
-      add(base, cyl(0.72, 0.72, 0.06, 8), pm('#16cdbb', { emissive: '#0a6e64', emissiveIntensity: 0.5 }), 0, 0.03, 0);
+      add(base, cyl(0.62, 0.72, 0.5, 6), pm('#d8d2c4'), 0, -0.6, 0);
+      add(base, cyl(0.72, 0.62, 0.32, 6), pm('#2fc7b5'), 0, -0.16, 0);
+      add(base, cyl(0.6, 0.6, 0.08, 6), pm('#7ff0e2', { emissive: '#16cdbb', emissiveIntensity: 0.35 }), 0, 0.02, 0);
+      for (let i = 0; i < 5; i++) { const a = i * 1.26 + 0.3; add(base, octa(0.12), leaf, Math.cos(a) * 0.62, 0.05, Math.sin(a) * 0.62, 0, a, 0.8).scale.set(1.2, 0.4, 0.6); }
     }
   } else if (eggId === 'meadow') {
     const leaf = pm(def!.accent);
@@ -938,9 +942,9 @@ export function makeLabel(text: string, opts: { color?: string; bg?: string; siz
   const fontPx = 40;
   const cv = document.createElement('canvas');
   const ctx = cv.getContext('2d')!;
-  ctx.font = `800 ${fontPx}px "Trebuchet MS", system-ui, sans-serif`;
+  ctx.font = `400 ${fontPx}px "Lilita One", "Trebuchet MS", system-ui, sans-serif`;
   const w1 = ctx.measureText(text).width;
-  ctx.font = `700 ${fontPx * 0.62}px "Trebuchet MS", system-ui, sans-serif`;
+  ctx.font = `600 ${fontPx * 0.62}px "Fredoka", "Trebuchet MS", system-ui, sans-serif`;
   const w2 = opts.sub ? ctx.measureText(opts.sub).width : 0;
   const w = Math.ceil(Math.max(w1, w2) + 48);
   const h = opts.sub ? 104 : 64;
@@ -956,11 +960,11 @@ export function makeLabel(text: string, opts: { color?: string; bg?: string; siz
     ctx.stroke();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${fontPx}px "Trebuchet MS", system-ui, sans-serif`;
+    ctx.font = `400 ${fontPx}px "Lilita One", "Trebuchet MS", system-ui, sans-serif`;
     ctx.fillStyle = opts.color ?? '#fff4dc';
     ctx.fillText(text, w / 2, opts.sub ? 36 : h / 2 + 2);
     if (opts.sub) {
-      ctx.font = `700 ${fontPx * 0.62}px "Trebuchet MS", system-ui, sans-serif`;
+      ctx.font = `600 ${fontPx * 0.62}px "Fredoka", "Trebuchet MS", system-ui, sans-serif`;
       ctx.fillStyle = '#16cdbb';
       ctx.fillText(opts.sub, w / 2, 76);
     }
@@ -984,14 +988,17 @@ export function buildTree(kind: 'oak' | 'pine' | 'crystal' | 'ember' | 'aurora',
   const r = (n: number) => ((Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1;
   const h = 1.6 + r(1) * 1.2;
   if (kind === 'oak') {
-    add(g, rb(0.45, h, 0.45, 0.08), lam('#7a5236'), 0, h / 2, 0);
-    const leaf = lam(r(2) > 0.5 ? '#5d9e3a' : '#6aae44');
-    add(g, rb(2.0, 1.4, 2.0, 0.3), leaf, 0, h + 0.5, 0);
-    add(g, rb(1.4, 1.0, 1.4, 0.25), lam('#7cc457'), 0.2, h + 1.3, 0.1);
-    add(g, rb(1.0, 0.8, 1.0, 0.2), leaf, -0.6, h + 0.2, 0.5);
+    add(g, rb(0.5, h + 0.6, 0.5, 0.08), lam('#7a4e2c'), 0, (h + 0.6) / 2, 0);
+    const dark = lam(r(2) > 0.5 ? '#3f9a33' : '#479f38');
+    const mid = lam('#5cb544');
+    const light = lam('#79cc52');
+    add(g, rb(2.6, 1.3, 2.6, 0.35), dark, 0, h + 0.5, 0, 0, r(5), 0);
+    add(g, rb(2.1, 1.2, 2.1, 0.32), mid, 0.15, h + 1.5, -0.1, 0, r(6) + 0.4, 0);
+    add(g, rb(1.3, 0.9, 1.3, 0.25), light, -0.1, h + 2.35, 0.1, 0, r(7), 0);
+    add(g, rb(1.1, 0.9, 1.1, 0.25), mid, -1.1, h + 0.35, 0.6, 0, 0.3, 0);
   } else if (kind === 'pine') {
-    add(g, rb(0.35, h, 0.35, 0.06), lam('#6a4630'), 0, h / 2, 0);
-    for (let i = 0; i < 3; i++) add(g, cone(1.3 - i * 0.3, 1.3, 6), lam(i % 2 ? '#3f7f3a' : '#4a8f42', undefined, true), 0, h + i * 0.75, 0);
+    add(g, rb(0.4, h + 0.4, 0.4, 0.06), lam('#6a4428'), 0, (h + 0.4) / 2, 0);
+    for (let i = 0; i < 4; i++) add(g, cone(1.55 - i * 0.32, 1.5, 7), lam(['#2f8a36', '#3c9a3c', '#48aa44', '#5abb4c'][i], undefined, true), 0, h + 0.3 + i * 0.85, 0, 0, i * 0.4, 0);
   } else if (kind === 'crystal') {
     const c = r(3) > 0.5 ? '#9462f5' : '#5fd0ff';
     for (let i = 0; i < 4; i++) {
@@ -1050,8 +1057,36 @@ export function buildLanternPost(): THREE.Group {
   add(g, rb(0.7, 0.12, 0.12, 0.03), lam('#5a3a24'), 0.25, 2.15, 0);
   add(g, rb(0.34, 0.08, 0.34, 0.03), lam('#3b3a40'), 0.5, 2.06, 0);
   add(g, rb(0.3, 0.08, 0.3, 0.03), lam('#3b3a40'), 0.5, 1.72, 0);
-  add(g, rb(0.26, 0.28, 0.26, 0.05), basic('#ffe08a'), 0.5, 1.89, 0, 0, 0, 0, false);
+  add(g, rb(0.26, 0.28, 0.26, 0.05), basic('#ffd36a'), 0.5, 1.89, 0, 0, 0, 0, false);
+  const glow = new THREE.Sprite(glowMaterial('#ffbd5a'));
+  glow.scale.setScalar(1.25);
+  glow.position.set(0.5, 1.89, 0);
+  glow.userData.glow = true;
+  g.add(glow);
   return g;
+}
+
+let glowTex: THREE.Texture | null = null;
+const glowMats = new Map<string, THREE.SpriteMaterial>();
+/** Soft additive halo for lanterns and crystals (cheap fake light). */
+export function glowMaterial(color: string): THREE.SpriteMaterial {
+  let m = glowMats.get(color);
+  if (m) return m;
+  if (!glowTex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const x = c.getContext('2d')!;
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.25, 'rgba(255,255,255,.55)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 64, 64);
+    glowTex = new THREE.CanvasTexture(c);
+  }
+  m = new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 });
+  glowMats.set(color, m);
+  return m;
 }
 
 export function buildFlag(color: string): THREE.Group {
@@ -1066,15 +1101,45 @@ export function buildSign(text: string, sub?: string): THREE.Group {
   const g = new THREE.Group();
   add(g, rb(0.14, 1.4, 0.14, 0.03), lam('#7a5236'), -0.7, 0.7, 0);
   add(g, rb(0.14, 1.4, 0.14, 0.03), lam('#7a5236'), 0.7, 0.7, 0);
-  add(g, rb(1.9, 0.8, 0.1, 0.04), lam('#a8743f'), 0, 1.3, 0);
-  const label = makeLabel(text, { sub, bg: 'rgba(90,58,36,0.0)', color: '#fff4dc', size: 0.42 });
-  label.position.set(0, 1.32, 0.08);
-  g.add(label);
+  add(g, rb(2.3, 1.1, 0.14, 0.05), lam('#7a4a26'), 0, 1.35, 0);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(2.16, 0.96), new THREE.MeshLambertMaterial({ map: signTexture(text, sub) }));
+  face.position.set(0, 1.35, 0.075);
+  g.add(face);
+  const back = face.clone();
+  back.rotation.y = Math.PI;
+  back.position.z = -0.075;
+  g.add(back);
   return g;
 }
 
+/** Painted wooden sign board: planks + chunky outlined lettering. */
+export function signTexture(text: string, sub?: string): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 228;
+  const x = c.getContext('2d')!;
+  const planks = ['#a8703c', '#9c6634', '#ad7642'];
+  for (let i = 0; i < 3; i++) { x.fillStyle = planks[i]; x.fillRect(0, i * 76, 512, 76); x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(0, i * 76 + 72, 512, 4); }
+  for (let i = 0; i < 40; i++) { x.fillStyle = `rgba(60,30,10,${0.05 + Math.random() * 0.08})`; x.fillRect(Math.random() * 512, Math.random() * 228, 40 + Math.random() * 80, 2); }
+  x.strokeStyle = '#5a3418'; x.lineWidth = 10; x.strokeRect(5, 5, 502, 218);
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineJoin = 'round';
+  const draw = (t: string, y: number, size: number, fill: string) => {
+    x.font = `400 ${size}px "Lilita One", "Trebuchet MS", sans-serif`;
+    let w = x.measureText(t).width;
+    if (w > 460) { size = size * 460 / w; x.font = `400 ${size}px "Lilita One", "Trebuchet MS", sans-serif`; w = 460; }
+    x.lineWidth = size * 0.16; x.strokeStyle = '#3a2210'; x.strokeText(t, 256, y);
+    x.fillStyle = fill; x.fillText(t, 256, y);
+  };
+  if (sub) { draw(text.toUpperCase(), 84, 70, '#fff4dc'); draw(sub.toUpperCase(), 160, 46, '#ffe27a'); }
+  else draw(text.toUpperCase(), 114, 80, '#fff4dc');
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 export function buildFencePost(): THREE.Mesh {
-  const m = new THREE.Mesh(rb(0.18, 0.9, 0.18, 0.04), lam('#8a5a32'));
+  const m = new THREE.Mesh(rb(0.24, 1.0, 0.24, 0.05), lam('#8a5530'));
   m.castShadow = true;
   return m;
 }
@@ -1159,5 +1224,36 @@ export function buildScrollIcon(): THREE.Group {
   add(g, cyl(0.06, 0.06, 0.7, 8), mat('#a8743f'), 0, 0.48, -0.13, 0, 0, Math.PI / 2);
   add(g, cyl(0.06, 0.06, 0.7, 8), mat('#a8743f'), 0, 0.12, 0.13, 0, 0, Math.PI / 2);
   add(g, rb(0.3, 0.02, 0.02, 0.005), mat('#865637'), 0, 0.33, 0.03, 0.9, 0, 0);
+  return g;
+}
+
+
+export function buildCoinFace(): THREE.Group {
+  const g = new THREE.Group();
+  const gold = mat('#ffa800', { rough: 0.4, emissive: '#c46000', emissiveIntensity: 0.35 });
+  add(g, cyl(0.42, 0.42, 0.12, 24), gold, 0, 0, 0, Math.PI / 2, 0, 0);
+  add(g, torus(0.36, 0.035, 6, 24), mat('#f0a818', { rough: 0.35, emissive: '#7a4a00', emissiveIntensity: 0.4 }), 0, 0, 0.065);
+  const starShape = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? 0.09 : 0.21;
+    const a = (i / 10) * Math.PI * 2 + Math.PI / 2;
+    if (i === 0) starShape.moveTo(Math.cos(a) * r, Math.sin(a) * r); else starShape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  const star = cachedGeo('coinStar', () => new THREE.ExtrudeGeometry(starShape, { depth: 0.03, bevelEnabled: false }));
+  add(g, star, mat('#fff3b0', { rough: 0.3, emissive: '#c09020', emissiveIntensity: 0.5 }), 0, 0, 0.06);
+  g.position.y = 0.4;
+  const w = new THREE.Group();
+  w.add(g);
+  return w;
+}
+
+export function buildBush(seed: number, color = '#4fa83a'): THREE.Group {
+  const g = new THREE.Group();
+  const r = (n: number) => ((Math.sin(seed * 31.7 + n * 12.3) * 9831.17) % 1 + 1) % 1;
+  const n = 3 + Math.floor(r(1) * 3);
+  for (let i = 0; i < n; i++) {
+    const s = 0.45 + r(i + 2) * 0.4;
+    add(g, cachedGeo('bushIco', () => new THREE.IcosahedronGeometry(1, 0)), lam(i % 2 ? color : shade(color, 0.08), undefined, true), (r(i + 5) - 0.5) * 1.1, s * 0.75, (r(i + 9) - 0.5) * 1.1).scale.set(s, s * 0.85, s);
+  }
   return g;
 }

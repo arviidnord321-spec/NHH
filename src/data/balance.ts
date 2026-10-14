@@ -29,9 +29,9 @@ export interface MaterialDef {
 export const MATERIALS: MaterialDef[] = [
   { id: 'bedrock', name: 'Bedrock', biome: 'any', category: 'mineral', hpMul: 1, valueMul: 0, units: 0, minToolTier: 99, color: '#3a3644', sound: 'rock', indestructible: true },
   // Meadow
-  { id: 'm_turf', name: 'Meadow Turf', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#78ae48', sound: 'soil' },
-  { id: 'm_soil', name: 'Loam', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#865637', sound: 'soil' },
-  { id: 'm_clay', name: 'Red Clay', biome: 'meadow', category: 'soil', hpMul: 1.5, valueMul: 1.6, units: 1, minToolTier: 0, color: '#a5603d', sound: 'soil' },
+  { id: 'm_turf', name: 'Meadow Turf', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#7acb45', sound: 'soil' },
+  { id: 'm_soil', name: 'Loam', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#a06438', sound: 'soil' },
+  { id: 'm_clay', name: 'Red Clay', biome: 'meadow', category: 'soil', hpMul: 1.5, valueMul: 1.6, units: 1, minToolTier: 0, color: '#c0703e', sound: 'soil' },
   { id: 'm_stone', name: 'Field Stone', biome: 'meadow', category: 'mineral', hpMul: 2.2, valueMul: 2.2, units: 1, minToolTier: 0, color: '#8e8a86', sound: 'rock' },
   { id: 'm_copper', name: 'Copper Node', biome: 'meadow', category: 'mineral', hpMul: 3, valueMul: 2.5, units: 3, minToolTier: 1, color: '#d9853b', emissive: '#4a2208', sound: 'crystal' },
   // Crystal Hollow
@@ -75,7 +75,7 @@ export interface BiomeDef {
 export const BIOMES: Record<BiomeId, BiomeDef> = {
   meadow: {
     id: 'meadow', name: 'Meadow Camp', baseHp: 20, baseValue: 5, unlockCost: 0, relicReq: null,
-    center: [0, 0], half: 40, ground: '#78ae48', ground2: '#8cc257', fog: '#bfe3f2', sky: '#9fd6f0',
+    center: [0, 0], half: 40, ground: '#5fb034', ground2: '#6cbd3e', fog: '#cdeaf7', sky: '#4aa8ee',
     layers: { top: 'm_turf', upper: 'm_soil', mid: 'm_clay', deep: 'm_stone', node: 'm_copper', rare: 'm_copper' },
     egg: 'meadow',
   },

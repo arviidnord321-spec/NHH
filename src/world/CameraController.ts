@@ -8,14 +8,14 @@ import { World } from './World';
 export class CameraController {
   readonly camera: THREE.PerspectiveCamera;
   yaw = 0; // camera sits at +z of target when yaw = 0
-  pitch = Math.atan2(4, 7);
+  pitch = 0.44;
   distance = Math.hypot(7, 4);
   private current = Math.hypot(7, 4);
   private target = new THREE.Vector3();
   private tmp = new THREE.Vector3();
   private dir = new THREE.Vector3();
   shake = 0;
-  private autoPitch = Math.atan2(4, 7);
+  private autoPitch = 0.44;
   /** true when the camera is so close the avatar should be hidden */
   tooClose = false;
   shakeEnabled = true;

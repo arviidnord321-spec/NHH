@@ -54,7 +54,9 @@ export class Game {
   private last = performance.now();
   time = 0;
   private autosave = 0;
-  private outline!: THREE.LineSegments;
+  private outline!: THREE.Group;
+  private outlineMat = new THREE.MeshBasicMaterial({ color: '#7dff6a', transparent: true, opacity: 0.95, depthWrite: false });
+  private outlineFill = new THREE.MeshBasicMaterial({ color: '#7dff6a', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
   private crack!: THREE.Mesh;
   private crackTex: THREE.Texture[] = [];
   target: DigTarget | null = null;
@@ -158,8 +160,22 @@ export class Game {
   }
 
   private buildHelpers() {
-    const box = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02));
-    this.outline = new THREE.LineSegments(box, new THREE.LineBasicMaterial({ color: '#16cdbb', transparent: true, opacity: 0.95, depthTest: true }));
+    // glowing selection frame: 12 bars along the cube edges + a faint fill
+    this.outline = new THREE.Group();
+    const t = 0.07, L = 1.06;
+    const bar = (sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), this.outlineMat);
+      m.position.set(x, y, z);
+      m.renderOrder = 3;
+      this.outline.add(m);
+    };
+    for (const a of [-0.51, 0.51]) for (const b of [-0.51, 0.51]) {
+      bar(L, t, t, 0, a, b);
+      bar(t, L, t, a, 0, b);
+      bar(t, t, L, a, b, 0);
+    }
+    const fill = new THREE.Mesh(new THREE.BoxGeometry(1.03, 1.03, 1.03), this.outlineFill);
+    this.outline.add(fill);
     this.outline.visible = false;
     this.world.scene.add(this.outline);
     for (let stage = 0; stage < 4; stage++) this.crackTex.push(makeCrackTexture(stage));
@@ -302,7 +318,9 @@ export class Game {
     this.outline.visible = !!t;
     if (t) {
       this.outline.position.copy(t.center);
-      (this.outline.material as THREE.LineBasicMaterial).color.set(!t.inReach ? '#ff6a5a' : t.treasure ? '#ffbd38' : '#16cdbb');
+      this.outlineMat.color.set(!t.inReach ? '#ff6a5a' : t.treasure ? '#ffbd38' : '#7dff6a');
+      this.outlineFill.color.copy(this.outlineMat.color);
+      this.outlineMat.opacity = 0.75 + Math.sin(this.time * 6) * 0.2;
       const hp = t.site.damage.get(t.cell);
       const mat = MATERIALS[t.site.materialIndex(t.cell)];
       const max = L.cellMaxHp(mat, t.site.biome, this.s.stats.cells);

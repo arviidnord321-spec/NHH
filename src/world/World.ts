@@ -12,7 +12,7 @@ import { hashString, mulberry32 } from '../core/rng';
 import { VoxelSite, blockTexture } from './VoxelSite';
 import {
   add, basic, buildChest, buildCrystalCluster, buildEgg, buildFencePost, buildFlag, buildHuman, buildLanternPost,
-  buildPedestal, buildRock, buildSign, buildTent, buildTree, EggRig, HumanRig, lam, makeLabel, prepGeo, rb, shade, sharedVertexMaterial,
+  buildBush, buildPedestal, buildRock, buildSign, buildTent, buildTree, EggRig, HumanRig, lam, makeLabel, prepGeo, rb, shade, sharedVertexMaterial,
 } from './models';
 
 export type InteractKind = 'trader' | 'smith' | 'eggs' | 'museum' | 'contracts' | 'surveyor' | 'gate' | 'chamber' | 'final' | 'starterEgg' | 'cosmetics';
@@ -94,16 +94,16 @@ export class World {
   private quality: QualityLevel = 'medium';
   private labels: THREE.Sprite[] = [];
   private labelPos = new THREE.Vector3();
-  readonly fog = new THREE.Fog('#bfe3f2', 40, 140);
+  readonly fog = new THREE.Fog('#cdeaf7', 60, 210);
   private fogTarget = new THREE.Color();
-  private skyTop = new THREE.Color('#5fb6e8');
-  private skyBottom = new THREE.Color('#d6f0ff');
+  private skyTop = new THREE.Color('#4aa8ee');
+  private skyBottom = new THREE.Color('#d4f0ff');
 
   constructor() {
     this.scene.fog = this.fog;
-    this.hemi = new THREE.HemisphereLight('#dff3ff', '#7a6a4a', 1.5);
+    this.hemi = new THREE.HemisphereLight('#eaf6ff', '#7a6a3a', 1.45);
     this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight('#fff1d6', 2.4);
+    this.sun = new THREE.DirectionalLight('#fff0d0', 2.7);
     this.sun.position.set(18, 30, 12);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
@@ -127,6 +127,7 @@ export class World {
       this.scene.add(g);
     }
     this.buildBounds();
+    this.buildBackdrop();
     for (const b of BIOME_ORDER) this.buildBiome(b);
     this.buildCamp();
     this.buildGates();
@@ -219,7 +220,7 @@ export class World {
     const T = 2;
     const P: number[] = [], C: number[] = [], N: number[] = [];
     const g1 = new THREE.Color(def.ground), g2 = new THREE.Color(def.ground2);
-    const pathC = new THREE.Color(b === 'meadow' ? '#c9a46a' : b === 'crystal' ? '#8fa0c8' : b === 'ember' ? '#7a6158' : '#4a5a8a');
+    const pathC = new THREE.Color(b === 'meadow' ? '#cf9452' : b === 'crystal' ? '#8fa0c8' : b === 'ember' ? '#7a6158' : '#4a5a8a');
     const segs = this.pathSegments(b);
     const rng = mulberry32(hashString(b));
     const col = new THREE.Color();
@@ -236,7 +237,7 @@ export class World {
         let isPath = false;
         for (const s of segs) if (distSeg(mx, mz, s) < 1.7) { isPath = true; break; }
         if (isPath) col.copy(pathC).multiplyScalar(0.94 + rng() * 0.1);
-        else col.copy(((x + z) / T) % 2 === 0 ? g1 : g2).lerp(g2, rng() * 0.4).multiplyScalar(0.94 + rng() * 0.1);
+        else col.copy(g1).lerp(g2, rng()).multiplyScalar(0.96 + rng() * 0.08);
         const quad = [[x, z], [x, z + T], [x + T, z + T], [x, z], [x + T, z + T], [x + T, z]];
         for (const [qx, qz] of quad) { P.push(qx, 0, qz); C.push(col.r, col.g, col.b); N.push(0, 1, 0); }
       }
@@ -258,11 +259,12 @@ export class World {
       const len = Math.hypot(x1 - x0, z1 - z0);
       const n = Math.ceil(len / 3);
       const def = BIOMES[b];
-      const rockC = b === 'meadow' ? '#8f8a7c' : b === 'crystal' ? '#5a6a9a' : b === 'ember' ? '#3a3438' : '#2c3b66';
+      const rockC = b === 'meadow' ? '#ab9c82' : b === 'crystal' ? '#5a6a9a' : b === 'ember' ? '#3a3438' : '#2c3b66';
       for (let i = 0; i < n; i++) {
         const t = (i + 0.5) / n;
         const x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
-        const hh = 4 + ((i * 7) % 5) * 0.9;
+        // low rocky ledges keep the horizon (sky, mesas, forest) visible
+        const hh = 1.6 + ((i * 7) % 5) * 0.45;
         add(st, rb(3.4, hh, 3.4, 0.4), lam(shade(rockC, ((i * 3) % 4) * 0.03)), x, hh / 2 - 0.2, z, 0, (i % 3) * 0.2, 0, false).userData.noShadow = true;
         if (b !== 'ember' && b !== 'aurora' && i % 2 === 0) add(st, rb(3.6, 0.5, 3.6, 0.2), lam(def.ground), x, hh - 0.1, z, 0, (i % 3) * 0.2, 0, false);
         if (b === 'crystal' && i % 4 === 0) { const cc = buildCrystalCluster('#9462f5', 4, 1.4); cc.position.set(x, hh - 0.2, z); st.add(cc); }
@@ -290,6 +292,57 @@ export class World {
     this.boxes.push({ minX: 39, minZ: 4.5, maxX: 43, maxZ: 40, h: 50, enabled: true });
     this.boxes.push({ minX: -40, minZ: 39, maxX: -4.5, maxZ: 43, h: 50, enabled: true });
     this.boxes.push({ minX: 4.5, minZ: 39, maxX: 40, maxZ: 43, h: 50, enabled: true });
+  }
+
+  /** Ground to the horizon (with a hole over the playable plus-shape), distant mesas and forest. */
+  private buildBackdrop() {
+    const outer = new THREE.Shape();
+    outer.moveTo(-420, -420); outer.lineTo(420, -420); outer.lineTo(420, 420); outer.lineTo(-420, 420); outer.lineTo(-420, -420);
+    const e = 39; // just inside the perimeter ledges, under them
+    const hole = new THREE.Path();
+    const pts: [number, number][] = [[-e, -121], [e, -121], [e, -e], [121, -e], [121, e], [e, e], [e, 121], [-e, 121], [-e, e], [-e, -e], [-e, -121]];
+    hole.moveTo(pts[0][0], -pts[0][1]);
+    for (const [x, z] of pts.slice(1)) hole.lineTo(x, -z);
+    outer.holes.push(hole);
+    const geo = new THREE.ShapeGeometry(outer);
+    geo.rotateX(-Math.PI / 2);
+    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: '#5aa832' }));
+    ground.position.y = -0.03;
+    ground.receiveShadow = false;
+    this.scene.add(ground);
+    const g = new THREE.Group();
+    const rng = mulberry32(4242);
+    // forest band just beyond the ledges
+    for (let i = 0; i < 160; i++) {
+      const a = rng() * Math.PI * 2, r = 135 + rng() * 60;
+      let x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (i < 70) { // also hug the meadow's outer edges
+        const side = i % 3;
+        if (side === 0) { x = -46 - rng() * 30; z = (rng() * 2 - 1) * 40; }
+        else if (side === 1) { x = 46 + rng() * 30; z = 46 + rng() * 20; }
+        else { x = -46 - rng() * 20; z = -46 - rng() * 20; }
+      }
+      if (Math.abs(x) < 42 && z > -124 && z < 124) continue;
+      if (Math.abs(z) < 42 && x > -42 && x < 124) continue;
+      const t = buildTree(rng() < 0.55 ? 'pine' : 'oak', i + 900);
+      t.position.set(x, 0, z);
+      t.scale.setScalar(1.4 + rng() * 1.2);
+      g.add(t);
+    }
+    // distant grass-topped mesas
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2 + rng() * 0.1, r = 240 + rng() * 70;
+      const w = 30 + rng() * 40, h = 22 + rng() * 34;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      add(g, rb(w, h, w * 0.8, 3), lam(shade('#b0a086', (rng() - 0.5) * 0.08), undefined, true), x, h / 2 - 1, z, 0, a, 0, false);
+      add(g, rb(w + 2, 3, w * 0.8 + 2, 1.2), lam('#5fae3a'), x, h, z, 0, a, 0, false);
+      if (rng() < 0.6) add(g, rb(w * 0.55, h * 0.4, w * 0.45, 2.5), lam('#a39378', undefined, true), x + 6, h + h * 0.2, z, 0, a + 0.3, 0, false);
+    }
+    g.traverse((o) => { o.userData.noShadow = true; });
+    const merged = mergeStatic(g, 400);
+    merged.traverse((o) => { (o as THREE.Mesh).castShadow = false; (o as THREE.Mesh).receiveShadow = false; });
+    merged.name = 'backdrop';
+    this.scene.add(merged);
   }
 
   private density() {
@@ -347,6 +400,15 @@ export class World {
       st.add(r);
       if (s > 0.9) this.circles.push({ x: p[0], z: p[1], r: s * 0.6, h: s });
     }
+    const bushC = b === 'meadow' ? '#4fa83a' : b === 'crystal' ? '#4f78c0' : b === 'ember' ? '#5a4a40' : '#1f8a80';
+    for (let i = 0; i < Math.round(36 * Math.max(0.6, dens)); i++) {
+      const p = this.placeFree(rng, cx, cz, def.half, avoid);
+      if (!p) continue;
+      const bush = buildBush(i + hashString(b), bushC);
+      bush.position.set(p[0], 0, p[1]);
+      bush.rotation.y = rng() * 6;
+      st.add(bush);
+    }
     if (b !== 'meadow') {
       const cc = b === 'crystal' ? '#9462f5' : b === 'ember' ? '#ff7a2e' : '#16cdbb';
       for (let i = 0; i < 16; i++) {
@@ -378,57 +440,75 @@ export class World {
   private buildGrass(b: BiomeId, rng: () => number) {
     if (b === 'ember') return;
     const def = BIOMES[b];
-    const count = Math.round((b === 'meadow' ? 1800 : 700) * this.density());
-    const geo = new THREE.ConeGeometry(0.09, 0.45, 3);
-    geo.translate(0, 0.22, 0);
-    const color = b === 'meadow' ? '#6aa63e' : b === 'crystal' ? '#6f9fd0' : '#2fa89a';
-    const m = new THREE.MeshLambertMaterial({ color });
+    const count = Math.round((b === 'meadow' ? 3600 : 900) * this.density());
+    // a tuft = 4 tapered blades with a dark-root → bright-tip gradient
+    const base = new THREE.Color(b === 'meadow' ? '#3f8a2a' : b === 'crystal' ? '#3d5f9a' : '#16786e');
+    const tip = new THREE.Color(b === 'meadow' ? '#8fd24e' : b === 'crystal' ? '#9fc4ff' : '#5ff0dc');
+    const P: number[] = [], C: number[] = [], N: number[] = [];
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI + rng() * 0.4;
+      const h = 0.28 + rng() * 0.22, w = 0.075;
+      const ox = Math.cos(a + 1.5) * 0.06, oz = Math.sin(a + 1.5) * 0.06;
+      const lean = (rng() - 0.5) * 0.2;
+      const dx = Math.cos(a) * w, dz = Math.sin(a) * w;
+      P.push(ox - dx, 0, oz - dz, ox + dx, 0, oz + dz, ox + lean, h, oz + lean * 0.5);
+      C.push(base.r, base.g, base.b, base.r, base.g, base.b, tip.r, tip.g, tip.b);
+      N.push(0, 1, 0, 0, 1, 0, 0, 1, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    // unlit vertex colors: both blade sides stay bright (no dark back faces)
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = this.grassUniform;
       sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         vec4 wp = instanceMatrix * vec4(0.0,0.0,0.0,1.0);
-        float sway = sin(uTime*1.8 + wp.x*0.35 + wp.z*0.27) * 0.12 * position.y;
+        float sway = sin(uTime*1.8 + wp.x*0.35 + wp.z*0.27) * 0.18 * position.y;
         transformed.x += sway; transformed.z += sway*0.6;`);
     };
     this.grassMats.push(m);
-    const mesh = new THREE.InstancedMesh(geo, m, count * 3);
+    const mesh = new THREE.InstancedMesh(geo, m, count);
     const d = new THREE.Object3D();
     let n = 0;
     const [cx, cz] = def.center;
     for (let i = 0; i < count; i++) {
       const x = cx + (rng() * 2 - 1) * (def.half - 2), z = cz + (rng() * 2 - 1) * (def.half - 2);
-      if (this.inAnyFootprint(x, z, 0.5) || this.nearPath(b, x, z, 1.8)) continue;
-      if (b === 'meadow' && Math.abs(x) < 14 && z > 0 && z < 24) continue;
-      for (let k = 0; k < 3; k++) {
-        d.position.set(x + (rng() - 0.5) * 0.3, 0, z + (rng() - 0.5) * 0.3);
-        d.rotation.set((rng() - 0.5) * 0.4, rng() * 6, (rng() - 0.5) * 0.4);
-        d.scale.setScalar(0.7 + rng() * 0.7);
-        d.updateMatrix();
-        mesh.setMatrixAt(n++, d.matrix);
-      }
+      if (this.inAnyFootprint(x, z, 0.4) || this.nearPath(b, x, z, 1.6)) continue;
+      if (b === 'meadow' && Math.abs(x) < 7 && z > 2 && z < 16) continue;
+      d.position.set(x, 0, z);
+      d.rotation.set(0, rng() * 6, 0);
+      d.scale.setScalar(0.8 + rng() * 0.5);
+      d.updateMatrix();
+      mesh.setMatrixAt(n++, d.matrix);
     }
     mesh.count = n;
-    mesh.receiveShadow = false;
     this.biomeGroups[b].add(mesh);
     if (b === 'meadow') {
-      // flowers
-      const fgeo = new THREE.OctahedronGeometry(0.09, 0);
-      const flowers = new THREE.InstancedMesh(fgeo, new THREE.MeshLambertMaterial({ color: '#ffffff' }), 260);
+      // daisies: petals + golden centre share instance transforms
+      const petals = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 7), new THREE.MeshLambertMaterial({ color: '#ffffff' }), 520);
+      const centers = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 6, 4), new THREE.MeshLambertMaterial({ color: '#ffc928' }), 520);
+      const fc = [new THREE.Color('#ffffff'), new THREE.Color('#ffffff'), new THREE.Color('#ff9ad0'), new THREE.Color('#ffe36a'), new THREE.Color('#c9a8ff')];
       let fn = 0;
-      const fc = [new THREE.Color('#ffffff'), new THREE.Color('#ffe36a'), new THREE.Color('#ff9ad0'), new THREE.Color('#a8d8ff')];
-      for (let i = 0; i < 260; i++) {
+      for (let i = 0; i < 520; i++) {
         const x = (rng() * 2 - 1) * 37, z = (rng() * 2 - 1) * 37;
         if (this.inAnyFootprint(x, z, 0.5) || this.nearPath(b, x, z, 1.8)) continue;
-        d.position.set(x, 0.32, z);
-        d.rotation.set(0, rng() * 6, 0);
-        d.scale.set(1, 0.5, 1);
+        if (Math.abs(x) < 7 && z > 2 && z < 16) continue;
+        d.position.set(x, 0.3 + rng() * 0.12, z);
+        d.rotation.set((rng() - 0.5) * 0.4, rng() * 6, (rng() - 0.5) * 0.4);
+        d.scale.setScalar(0.8 + rng() * 0.6);
         d.updateMatrix();
-        flowers.setMatrixAt(fn, d.matrix);
-        flowers.setColorAt(fn, fc[fn % 4]);
+        petals.setMatrixAt(fn, d.matrix);
+        petals.setColorAt(fn, fc[fn % fc.length]);
+        d.position.y += 0.025;
+        d.updateMatrix();
+        centers.setMatrixAt(fn, d.matrix);
         fn++;
       }
-      flowers.count = fn;
-      this.biomeGroups[b].add(flowers);
+      petals.count = fn;
+      centers.count = fn;
+      this.biomeGroups[b].add(petals, centers);
     }
   }
 
@@ -863,15 +943,15 @@ export class World {
     for (let i = 0; i <= W; i += 2) {
       for (const [x, z] of [[ox + i, oz - 0.4], [ox + i, oz + W + 0.4], [ox - 0.4, oz + i], [ox + W + 0.4, oz + i]] as [number, number][]) {
         const p = buildFencePost();
-        p.position.set(x, 0.45, z);
+        p.position.set(x, 0.5, z);
         st.add(p);
       }
     }
-    const rope = lam('#d8c9a3');
-    add(st, rb(W + 0.8, 0.06, 0.06, 0.02), rope, ox + W / 2, 0.75, oz - 0.4, 0, 0, 0, false);
-    add(st, rb(W + 0.8, 0.06, 0.06, 0.02), rope, ox + W / 2, 0.75, oz + W + 0.4, 0, 0, 0, false);
-    add(st, rb(0.06, 0.06, W + 0.8, 0.02), rope, ox - 0.4, 0.75, oz + W / 2, 0, 0, 0, false);
-    add(st, rb(0.06, 0.06, W + 0.8, 0.02), rope, ox + W + 0.4, 0.75, oz + W / 2, 0, 0, 0, false);
+    const rope = lam('#e2cf9e');
+    add(st, rb(W + 0.8, 0.1, 0.1, 0.04), rope, ox + W / 2, 0.8, oz - 0.4, 0, 0, 0, false);
+    add(st, rb(W + 0.8, 0.1, 0.1, 0.04), rope, ox + W / 2, 0.8, oz + W + 0.4, 0, 0, 0, false);
+    add(st, rb(0.1, 0.1, W + 0.8, 0.04), rope, ox - 0.4, 0.8, oz + W / 2, 0, 0, 0, false);
+    add(st, rb(0.1, 0.1, W + 0.8, 0.04), rope, ox + W + 0.4, 0.8, oz + W / 2, 0, 0, 0, false);
     const roman = ['I', 'II', 'III'][site.index];
     const sign = buildSign(`Dig Site ${roman}`, BIOMES[site.biome].name);
     // put the sign on the side facing the biome center
@@ -1093,12 +1173,12 @@ export class World {
     const k = Math.min(1, dt * 1.5);
     this.fog.color.lerp(this.fogTarget.set(def.fog), k);
     this.skyBottom.lerp(this.fogTarget.set(def.fog), k);
-    this.skyTop.lerp(this.fogTarget.set(def.sky).multiplyScalar(0.85), k);
+    this.skyTop.lerp(this.fogTarget.set(def.sky), k);
     (this.scene.userData.sky as THREE.Mesh).position.copy(player);
-    const hemiSky = cur === 'aurora' ? '#7f9fff' : cur === 'ember' ? '#ffd0b0' : cur === 'crystal' ? '#c8c8ff' : '#dff3ff';
+    const hemiSky = cur === 'aurora' ? '#7f9fff' : cur === 'ember' ? '#ffd0b0' : cur === 'crystal' ? '#c8c8ff' : '#eaf6ff';
     this.hemi.color.lerp(this.fogTarget.set(hemiSky), k);
-    this.hemi.intensity += ((cur === 'aurora' ? 1.15 : 1.5) - this.hemi.intensity) * k;
-    this.sun.intensity += ((cur === 'aurora' ? 1.3 : cur === 'ember' ? 2.0 : 2.4) - this.sun.intensity) * k;
+    this.hemi.intensity += ((cur === 'aurora' ? 1.15 : cur === 'meadow' ? 1.45 : 1.5) - this.hemi.intensity) * k;
+    this.sun.intensity += ((cur === 'aurora' ? 1.3 : cur === 'ember' ? 2.0 : cur === 'meadow' ? 2.7 : 2.4) - this.sun.intensity) * k;
     // shadow camera follows the player
     this.sun.position.set(player.x + 18, player.y + 30, player.z + 12);
     this.sun.target.position.copy(player);

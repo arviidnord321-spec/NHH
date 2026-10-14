@@ -7,6 +7,8 @@ import { createDefaultSave, type SaveData } from './core/state';
 async function boot() {
   const bootEl = document.getElementById('boot')!;
   const msg = document.getElementById('bootmsg')!;
+  // chunky display font is needed by canvas-painted signs/labels
+  try { await Promise.race([Promise.all([document.fonts.load('40px "Lilita One"'), document.fonts.load('600 20px "Fredoka"')]), new Promise((r) => setTimeout(r, 2500))]); } catch { /* fallback fonts */ }
   const platform = await createPlatform();
   const saves = new SaveManager(platform.storage);
   // read & validate existing progress BEFORE any default is written

@@ -48,8 +48,10 @@ export class PlayerController {
     this.toolKey = key;
     if (this.toolModel) this.rig.toolHolder.remove(this.toolModel);
     this.toolModel = kind === 'pickaxe' ? buildPickaxe(tier) : kind === 'lantern' ? buildLanternTool() : buildShovel(tier);
-    this.toolModel.rotation.x = Math.PI / 2;
-    this.toolModel.position.set(0, 0, 0.1);
+    // held low and angled toward the ground, blade forward
+    this.toolModel.rotation.set(1.05, 0, -0.15);
+    this.toolModel.scale.setScalar(1.25);
+    this.toolModel.position.set(0.04, 0, 0.12);
     this.rig.toolHolder.add(this.toolModel);
   }
 

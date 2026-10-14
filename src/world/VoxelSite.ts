@@ -14,6 +14,8 @@ const MAT_COLORS = MATERIALS.map((m) => new THREE.Color(m.color));
 const GLOW = MATERIALS.map((m) => !!m.emissive);
 const BOUNDARY_COLOR = new THREE.Color('#5a3d2a');
 const BEDROCK_INDEX = MATERIALS.findIndex((m) => m.id === 'bedrock');
+const TURF = MATERIALS.map((m) => m.id.endsWith('_turf'));
+const TURF_SIDE = new THREE.Color('#9a5f34');
 
 let bevelTex: THREE.Texture | null = null;
 export function blockTexture(): THREE.Texture {
@@ -30,15 +32,12 @@ export function blockTexture(): THREE.Texture {
     g.fillRect(Math.random() * 64, Math.random() * 64, 3, 3);
   }
   // bevel: light top/left, dark bottom/right
-  g.fillStyle = 'rgba(255,255,255,0.55)';
-  g.fillRect(0, 0, 64, 4);
-  g.fillRect(0, 0, 4, 64);
-  g.fillStyle = 'rgba(0,0,0,0.28)';
-  g.fillRect(0, 60, 64, 4);
-  g.fillRect(60, 0, 4, 64);
-  g.strokeStyle = 'rgba(0,0,0,0.22)';
-  g.lineWidth = 2;
-  g.strokeRect(1, 1, 62, 62);
+  g.fillStyle = 'rgba(255,255,255,0.45)';
+  g.fillRect(0, 0, 64, 3);
+  g.fillRect(0, 0, 3, 64);
+  g.fillStyle = 'rgba(0,0,0,0.16)';
+  g.fillRect(0, 61, 64, 3);
+  g.fillRect(61, 0, 3, 64);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.magFilter = THREE.LinearFilter;
@@ -167,17 +166,26 @@ export class VoxelSite {
     const P: number[] = [], N: number[] = [], C: number[] = [], U: number[] = [], I: number[] = [];
     const GP: number[] = [], GN: number[] = [], GC: number[] = [], GU: number[] = [], GI: number[] = [];
     const col = new THREE.Color();
-    const pushFace = (glow: boolean, x: number, y: number, z: number, f: typeof FACES[number], c: THREE.Color) => {
+    const colB = new THREE.Color();
+    const pushQuad = (glow: boolean, x: number, y: number, z: number, f: typeof FACES[number], c: THREE.Color, y0: number, y1: number) => {
       const p = glow ? GP : P, n = glow ? GN : N, cc = glow ? GC : C, u = glow ? GU : U, ii = glow ? GI : I;
       const base = p.length / 3;
       for (let k = 0; k < 4; k++) {
         const o = f.c[k];
-        p.push(x + o[0], y + o[1], z + o[2]);
+        const oy = f.n[1] === 0 ? (o[1] === 0 ? y0 : y1) : o[1];
+        p.push(x + o[0], y + oy, z + o[2]);
         n.push(f.n[0], f.n[1], f.n[2]);
         cc.push(c.r, c.g, c.b);
-        u.push(UVS[k * 2], UVS[k * 2 + 1]);
+        u.push(UVS[k * 2], f.n[1] === 0 ? oy : UVS[k * 2 + 1]);
       }
       ii.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    const pushFace = (glow: boolean, x: number, y: number, z: number, f: typeof FACES[number], c: THREE.Color, cBottom?: THREE.Color) => {
+      if (cBottom) {
+        // grass cap strip over a dirt side
+        pushQuad(glow, x, y, z, f, c, 0.74, 1);
+        pushQuad(glow, x, y, z, f, cBottom, 0, 0.74);
+      } else pushQuad(glow, x, y, z, f, c, 0, 1);
     };
     const W = SITE.w, D = SITE.d, H = SITE.h;
     for (let y = 0; y < H; y++) {
@@ -198,7 +206,11 @@ export class VoxelSite {
               else open = !this.renderSolid(cellIndex(nx, ny, nz));
               if (!open) continue;
               col.copy(MAT_COLORS[mi]).multiplyScalar((glow ? 1.1 : f.shade * depthDark) * noise);
-              pushFace(glow, x, y, z, f, col);
+              // grass blocks: green cap fading into dirt down the sides
+              if (TURF[mi] && f.n[1] === 0) {
+                colB.copy(TURF_SIDE).multiplyScalar(f.shade * depthDark * noise);
+                pushFace(glow, x, y, z, f, col, colB);
+              } else pushFace(glow, x, y, z, f, col);
             }
           } else {
             // empty cell: draw walls of the surrounding boundary (outside the grid)

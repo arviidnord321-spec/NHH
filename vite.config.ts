@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     target: 'es2020',
     chunkSizeWarningLimit: 1200,
-    assetsInlineLimit: 0,
+    assetsInlineLimit: 100000,
   },
   test: {
     environment: 'node',
