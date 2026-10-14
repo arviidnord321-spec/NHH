@@ -6,13 +6,14 @@
  */
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EGG_BY_ID, PET_ENTRY_BY_ID, PetPalette, STARTER_EGG, TOOLS } from '../data/balance';
 
 // ───────── caches ─────────
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const matCache = new Map<string, THREE.Material>();
 
-export function rb(w: number, h: number, d: number, r = 0.07, seg = 2): THREE.BufferGeometry {
+export function rb(w: number, h: number, d: number, r = 0.07, seg = 1): THREE.BufferGeometry {
   const k = `rb${w},${h},${d},${r},${seg}`;
   let g = geoCache.get(k);
   if (!g) {
@@ -97,6 +98,85 @@ function eyes(parent: THREE.Object3D, y: number, z: number, spacing: number, siz
   return out;
 }
 
+// ───────── batching helpers ─────────
+const sharedVC = new Map<string, THREE.Material>();
+/**
+ * Plain opaque, non-emissive, untextured materials are batched into a few
+ * shared vertex-colored materials (their color is baked per vertex). Returns
+ * null when the material must stay unique (emissive, transparent, textured).
+ */
+export function sharedVertexMaterial(m: THREE.Material): THREE.Material | null {
+  const anyM = m as THREE.MeshStandardMaterial & THREE.MeshLambertMaterial;
+  if (m.transparent || anyM.map || (anyM.emissive && anyM.emissive.getHex() !== 0) || (m as any).vertexColors) return null;
+  let kind: string;
+  if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) kind = 'std';
+  else if ((m as THREE.MeshLambertMaterial).isMeshLambertMaterial) kind = 'lam';
+  else if ((m as THREE.MeshBasicMaterial).isMeshBasicMaterial) kind = 'basic';
+  else return null;
+  const flat = !!anyM.flatShading;
+  const key = `${kind}|${flat}`;
+  let shared = sharedVC.get(key);
+  if (!shared) {
+    if (kind === 'std') shared = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: flat });
+    else if (kind === 'lam') shared = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: flat });
+    else shared = new THREE.MeshBasicMaterial({ vertexColors: true });
+    sharedVC.set(key, shared);
+  }
+  return shared;
+}
+
+/** Non-indexed clone with only position/normal/uv(+color), transformed. */
+export function prepGeo(src: THREE.BufferGeometry, matrix: THREE.Matrix4, color: THREE.Color | null): THREE.BufferGeometry {
+  const g = src.index ? src.toNonIndexed() : src.clone();
+  for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+  const n = g.attributes.position.count;
+  if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(n * 2), 2));
+  if (color) {
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { c[i * 3] = color.r; c[i * 3 + 1] = color.g; c[i * 3 + 2] = color.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  }
+  g.applyMatrix4(matrix);
+  return g;
+}
+
+/**
+ * Merge the direct mesh children of every group (batched by material, plain
+ * colors baked into shared vertex-colored materials) so a rig keeps its
+ * animated sub-groups but needs far fewer draw calls. Meshes flagged with
+ * userData.keep are left untouched (e.g. recolorable cosmetics).
+ */
+export function compactRig(root: THREE.Object3D): void {
+  const groups: THREE.Object3D[] = [];
+  root.traverse((o) => { if (!(o as THREE.Mesh).isMesh) groups.push(o); });
+  for (const g of groups) {
+    const buckets = new Map<THREE.Material, { meshes: THREE.Mesh[]; shared: boolean }>();
+    for (const c of g.children) {
+      const m = c as THREE.Mesh;
+      if (!m.isMesh || m.userData.keep || Array.isArray(m.material) || m.children.length) continue;
+      const shared = sharedVertexMaterial(m.material);
+      const key = shared ?? m.material;
+      const b = buckets.get(key) ?? { meshes: [], shared: !!shared };
+      b.meshes.push(m);
+      buckets.set(key, b);
+    }
+    for (const [material, b] of buckets) {
+      if (b.meshes.length < 2 && !b.shared) continue;
+      const geos = b.meshes.map((m) => {
+        m.updateMatrix();
+        return prepGeo(m.geometry, m.matrix, b.shared ? (m.material as THREE.MeshStandardMaterial).color : null);
+      });
+      const merged = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+      if (geos.length > 1) geos.forEach((x) => x.dispose());
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, material);
+      mesh.castShadow = b.meshes.some((m) => m.castShadow);
+      for (const m of b.meshes) g.remove(m);
+      g.add(mesh);
+    }
+  }
+}
+
 // ───────── Player / NPC ─────────
 export interface HumanRig {
   root: THREE.Group;
@@ -142,6 +222,7 @@ export function buildHuman(look: HumanLook): HumanRig {
   const scarf: THREE.Mesh[] = [];
   scarf.push(add(body, rb(0.7, 0.16, 0.54, 0.07), mat(look.scarf), 0, 1.6, 0));
   scarf.push(add(body, rb(0.16, 0.42, 0.08, 0.04), mat(look.scarf), 0.2, 1.38, 0.27, 0.15, 0, 0.12));
+  for (const sc of scarf) sc.userData.keep = true;
   // Backpack
   if (look.backpack) {
     add(body, rb(0.66, 0.66, 0.3, 0.08), mat('#8a5a32'), 0, 1.22, -0.36);
@@ -209,6 +290,8 @@ export function buildHuman(look: HumanLook): HumanRig {
   add(crown, torus(0.24, 0.035, 6, 20), mat('#ffbd38', { metal: 0.6, rough: 0.3 }), 0, -0.04, 0, Math.PI / 2, 0, 0);
   crown.visible = false;
   head.add(crown);
+  helmet.userData.keep = true;
+  compactRig(root);
   return { root, body, head, armL, armR, legL, legR, toolHolder, helmet, scarf, crown, lamp };
 }
 
@@ -314,6 +397,7 @@ export function buildPet(entryId: string, shiny = false): PetRig {
     sparkle.name = 'shinySparkle';
     body.add(sparkle);
   }
+  compactRig(root);
   return rig;
 }
 
@@ -842,6 +926,7 @@ export function buildEgg(eggId: string, withBase = true): EggRig {
   }
   if (withBase && eggId !== 'aurora') egg.position.y = 0.06;
   root.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+  compactRig(root);
   return { root, egg, top, bottom, cracks, base, spinners };
 }
 

@@ -12,7 +12,7 @@ import { hashString, mulberry32 } from '../core/rng';
 import { VoxelSite, blockTexture } from './VoxelSite';
 import {
   add, basic, buildChest, buildCrystalCluster, buildEgg, buildFencePost, buildFlag, buildHuman, buildLanternPost,
-  buildPedestal, buildRock, buildSign, buildTent, buildTree, EggRig, HumanRig, lam, makeLabel, rb, shade,
+  buildPedestal, buildRock, buildSign, buildTent, buildTree, EggRig, HumanRig, lam, makeLabel, prepGeo, rb, shade, sharedVertexMaterial,
 } from './models';
 
 export type InteractKind = 'trader' | 'smith' | 'eggs' | 'museum' | 'contracts' | 'surveyor' | 'gate' | 'chamber' | 'final' | 'starterEgg' | 'cosmetics';
@@ -92,6 +92,8 @@ export class World {
   private siteLambert: THREE.MeshLambertMaterial;
   private siteGlow: THREE.MeshBasicMaterial;
   private quality: QualityLevel = 'medium';
+  private labels: THREE.Sprite[] = [];
+  private labelPos = new THREE.Vector3();
   readonly fog = new THREE.Fog('#bfe3f2', 40, 140);
   private fogTarget = new THREE.Color();
   private skyTop = new THREE.Color('#5fb6e8');
@@ -148,6 +150,7 @@ export class World {
         this.biomeGroups[b].add(merged);
       }
     }
+    this.scene.traverse((o) => { if ((o as THREE.Sprite).isSprite) this.labels.push(o as THREE.Sprite); });
     this.refresh(save);
   }
 
@@ -260,7 +263,7 @@ export class World {
         const t = (i + 0.5) / n;
         const x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
         const hh = 4 + ((i * 7) % 5) * 0.9;
-        add(st, rb(3.4, hh, 3.4, 0.4), lam(shade(rockC, ((i * 3) % 4) * 0.03)), x, hh / 2 - 0.2, z, 0, (i % 3) * 0.2, 0, false);
+        add(st, rb(3.4, hh, 3.4, 0.4), lam(shade(rockC, ((i * 3) % 4) * 0.03)), x, hh / 2 - 0.2, z, 0, (i % 3) * 0.2, 0, false).userData.noShadow = true;
         if (b !== 'ember' && b !== 'aurora' && i % 2 === 0) add(st, rb(3.6, 0.5, 3.6, 0.2), lam(def.ground), x, hh - 0.1, z, 0, (i % 3) * 0.2, 0, false);
         if (b === 'crystal' && i % 4 === 0) { const cc = buildCrystalCluster('#9462f5', 4, 1.4); cc.position.set(x, hh - 0.2, z); st.add(cc); }
       }
@@ -643,7 +646,7 @@ export class World {
       const x = Math.sin(a) * 4.2, z = shrineZ + Math.cos(a) * -4.2 * -1 * 0.6 + 1.2;
       const ped = buildPedestal(e.accent);
       ped.position.set(x, 0.3, z);
-      this.biomeGroups.meadow.add(ped);
+      st.add(ped);
       const rig = buildEgg(e.id);
       rig.root.position.set(x, 1.32, z);
       rig.root.scale.setScalar(0.95);
@@ -837,7 +840,7 @@ export class World {
       this.boxes.push({ minX: dx - (doorOnX ? 0.3 : 1.1), minZ: dz - (doorOnX ? 1.1 : 0.3), maxX: dx + (doorOnX ? 0.3 : 1.1), maxZ: dz + (doorOnX ? 1.1 : 0.3), h: 3, id: `door_${b}`, enabled: true });
       const ped = buildPedestal('#ffbd38');
       ped.position.set(x, 0, z);
-      this.biomeGroups[b].add(ped);
+      st.add(ped);
       const chest = buildChest('relic');
       chest.position.set(x, 0.95, z);
       chest.name = 'chamberChest';
@@ -1074,6 +1077,11 @@ export class World {
         n.rig.root.rotation.y += angleDiff(n.rig.root.rotation.y, target) * Math.min(1, dt * 4);
       }
     }
+    // label LOD: distant name tags are skipped (layer 1 is never rendered)
+    for (const l of this.labels) {
+      l.getWorldPosition(this.labelPos);
+      l.layers.set(this.labelPos.distanceToSquared(player) < 34 * 34 ? 0 : 1);
+    }
     // biome visibility & environment blend
     const cur = this.biomeAt(player.x, player.z);
     for (const b of BIOME_ORDER) {
@@ -1119,40 +1127,46 @@ function octa(r: number) {
  * Bake a static group into one merged mesh per material (world transforms
  * applied). Sprites/lights are kept as-is.
  */
-export function mergeStatic(group: THREE.Group): THREE.Group {
+export function mergeStatic(group: THREE.Group, chunk = 32): THREE.Group {
   group.updateMatrixWorld(true);
-  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const buckets = new Map<string, { mat: THREE.Material; shadow: boolean; geos: THREE.BufferGeometry[] }>();
   const keep: THREE.Object3D[] = [];
+  const wp = new THREE.Vector3();
+  const matIds = new Map<THREE.Material, number>();
   group.traverse((o) => {
     const m = o as THREE.Mesh;
     if (m.isMesh && !Array.isArray(m.material)) {
-      let g = m.geometry.clone();
-      if (g.index) g = g.toNonIndexed();
-      for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
-      if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-      g.applyMatrix4(m.matrixWorld);
-      const list = buckets.get(m.material) ?? [];
-      list.push(g);
-      buckets.set(m.material, list);
+      const shared = sharedVertexMaterial(m.material);
+      const mat = shared ?? m.material;
+      const g = prepGeo(m.geometry, m.matrixWorld, shared ? (m.material as THREE.MeshLambertMaterial).color : null);
+      m.getWorldPosition(wp);
+      if (!matIds.has(mat)) matIds.set(mat, matIds.size);
+      const shadow = m.castShadow && !m.userData.noShadow;
+      // spatial chunks keep frustum culling (main + shadow pass) effective
+      const key = `${matIds.get(mat)}|${shadow ? 1 : 0}|${Math.floor(wp.x / chunk)}|${Math.floor(wp.z / chunk)}`;
+      const b = buckets.get(key) ?? { mat, shadow, geos: [] };
+      b.geos.push(g);
+      buckets.set(key, b);
     } else if ((o as THREE.Sprite).isSprite) {
       keep.push(o);
     }
   });
   const out = new THREE.Group();
-  for (const [mat, geos] of buckets) {
-    const merged = mergeGeometries(geos, false);
-    for (const g of geos) g.dispose();
+  for (const b of buckets.values()) {
+    const merged = mergeGeometries(b.geos, false);
+    for (const g of b.geos) g.dispose();
     if (!merged) continue;
-    const mesh = new THREE.Mesh(merged, mat);
-    mesh.castShadow = true;
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, b.mat);
+    mesh.castShadow = b.shadow;
     mesh.receiveShadow = true;
     out.add(mesh);
   }
   for (const s of keep) {
-    const wp = new THREE.Vector3();
-    s.getWorldPosition(wp);
+    const p = new THREE.Vector3();
+    s.getWorldPosition(p);
     s.removeFromParent();
-    s.position.copy(wp);
+    s.position.copy(p);
     out.add(s);
   }
   return out;
