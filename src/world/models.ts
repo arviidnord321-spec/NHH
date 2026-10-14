@@ -13,7 +13,14 @@ import { EGG_BY_ID, PET_ENTRY_BY_ID, PetPalette, STARTER_EGG, TOOLS } from '../d
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const matCache = new Map<string, THREE.Material>();
 
-export function rb(w: number, h: number, d: number, r = 0.07, seg = 1): THREE.BufferGeometry {
+let RB_SEG = 1;
+/** Run a builder with rounder bevels (characters/pets get smoother silhouettes). */
+export function withSmoothBevels<T>(seg: number, fn: () => T): T {
+  const prev = RB_SEG;
+  RB_SEG = seg;
+  try { return fn(); } finally { RB_SEG = prev; }
+}
+export function rb(w: number, h: number, d: number, r = 0.07, seg = RB_SEG): THREE.BufferGeometry {
   const k = `rb${w},${h},${d},${r},${seg}`;
   let g = geoCache.get(k);
   if (!g) {
@@ -195,7 +202,10 @@ export interface HumanRig {
 
 export interface HumanLook { jacket: string; pants: string; skin: string; helmet: string | null; scarf: string; backpack: boolean; hat?: 'none' | 'cap' | 'wide'; hair?: string }
 
-export function buildHuman(look: HumanLook): HumanRig {
+export function buildHuman(look: HumanLook, smooth = false): HumanRig {
+  return smooth ? withSmoothBevels(2, () => buildHumanInner(look)) : buildHumanInner(look);
+}
+function buildHumanInner(look: HumanLook): HumanRig {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -372,6 +382,9 @@ function face(head: THREE.Object3D, y: number, z: number, spacing: number, size:
 }
 
 export function buildPet(entryId: string, shiny = false): PetRig {
+  return withSmoothBevels(2, () => buildPetInner(entryId, shiny));
+}
+function buildPetInner(entryId: string, shiny: boolean): PetRig {
   const entry = PET_ENTRY_BY_ID[entryId];
   const pal = entry.palette;
   const root = new THREE.Group();
@@ -992,13 +1005,15 @@ export function buildTree(kind: 'oak' | 'pine' | 'crystal' | 'ember' | 'aurora',
     const dark = lam(r(2) > 0.5 ? '#3f9a33' : '#479f38');
     const mid = lam('#5cb544');
     const light = lam('#79cc52');
-    add(g, rb(2.6, 1.3, 2.6, 0.35), dark, 0, h + 0.5, 0, 0, r(5), 0);
-    add(g, rb(2.1, 1.2, 2.1, 0.32), mid, 0.15, h + 1.5, -0.1, 0, r(6) + 0.4, 0);
-    add(g, rb(1.3, 0.9, 1.3, 0.25), light, -0.1, h + 2.35, 0.1, 0, r(7), 0);
-    add(g, rb(1.1, 0.9, 1.1, 0.25), mid, -1.1, h + 0.35, 0.6, 0, 0.3, 0);
+    const puff = cachedGeo('puff', () => new THREE.IcosahedronGeometry(1, 1));
+    add(g, puff, dark, 0, h + 0.7, 0).scale.set(1.55, 1.15, 1.55);
+    add(g, puff, mid, 0.55, h + 1.45, 0.3).scale.set(1.15, 1.0, 1.15);
+    add(g, puff, mid, -0.65, h + 1.25, -0.35).scale.set(1.1, 0.95, 1.1);
+    add(g, puff, light, 0.05, h + 2.1, -0.05).scale.set(0.95, 0.85, 0.95);
+    add(g, puff, dark, -1.0, h + 0.45, 0.7).scale.set(0.8, 0.7, 0.8);
   } else if (kind === 'pine') {
     add(g, rb(0.4, h + 0.4, 0.4, 0.06), lam('#6a4428'), 0, (h + 0.4) / 2, 0);
-    for (let i = 0; i < 4; i++) add(g, cone(1.55 - i * 0.32, 1.5, 7), lam(['#2f8a36', '#3c9a3c', '#48aa44', '#5abb4c'][i], undefined, true), 0, h + 0.3 + i * 0.85, 0, 0, i * 0.4, 0);
+    for (let i = 0; i < 4; i++) add(g, cone(1.55 - i * 0.32, 1.5, 12), lam(['#2f8a36', '#3c9a3c', '#48aa44', '#5abb4c'][i]), 0, h + 0.3 + i * 0.85, 0, 0, i * 0.4, 0);
   } else if (kind === 'crystal') {
     const c = r(3) > 0.5 ? '#9462f5' : '#5fd0ff';
     for (let i = 0; i < 4; i++) {
@@ -1019,7 +1034,7 @@ export function buildTree(kind: 'oak' | 'pine' | 'crystal' | 'ember' | 'aurora',
 }
 
 export function buildRock(color: string, scale: number): THREE.Mesh {
-  const m = new THREE.Mesh(dodeca(0.6), lam(color, undefined, true));
+  const m = new THREE.Mesh(cachedGeo('rockIco', () => { const g = new THREE.IcosahedronGeometry(0.62, 1); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const k = 0.88 + (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 * 0.22; p.setXYZ(i, p.getX(i) * k, p.getY(i) * k, p.getZ(i) * k); } g.computeVertexNormals(); return g; }), lam(color, undefined, true));
   m.scale.set(scale * 1.2, scale * 0.8, scale);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -1253,7 +1268,7 @@ export function buildBush(seed: number, color = '#4fa83a'): THREE.Group {
   const n = 3 + Math.floor(r(1) * 3);
   for (let i = 0; i < n; i++) {
     const s = 0.45 + r(i + 2) * 0.4;
-    add(g, cachedGeo('bushIco', () => new THREE.IcosahedronGeometry(1, 0)), lam(i % 2 ? color : shade(color, 0.08), undefined, true), (r(i + 5) - 0.5) * 1.1, s * 0.75, (r(i + 9) - 0.5) * 1.1).scale.set(s, s * 0.85, s);
+    add(g, cachedGeo('bushIco1', () => new THREE.IcosahedronGeometry(1, 1)), lam(i % 2 ? color : shade(color, 0.08)), (r(i + 5) - 0.5) * 1.1, s * 0.75, (r(i + 9) - 0.5) * 1.1).scale.set(s, s * 0.85, s);
   }
   return g;
 }

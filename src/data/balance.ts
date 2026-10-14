@@ -29,7 +29,7 @@ export interface MaterialDef {
 export const MATERIALS: MaterialDef[] = [
   { id: 'bedrock', name: 'Bedrock', biome: 'any', category: 'mineral', hpMul: 1, valueMul: 0, units: 0, minToolTier: 99, color: '#3a3644', sound: 'rock', indestructible: true },
   // Meadow
-  { id: 'm_turf', name: 'Meadow Turf', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#7acb45', sound: 'soil' },
+  { id: 'm_turf', name: 'Meadow Turf', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#68bb3a', sound: 'soil' },
   { id: 'm_soil', name: 'Loam', biome: 'meadow', category: 'soil', hpMul: 1, valueMul: 1, units: 1, minToolTier: 0, color: '#a06438', sound: 'soil' },
   { id: 'm_clay', name: 'Red Clay', biome: 'meadow', category: 'soil', hpMul: 1.5, valueMul: 1.6, units: 1, minToolTier: 0, color: '#c0703e', sound: 'soil' },
   { id: 'm_stone', name: 'Field Stone', biome: 'meadow', category: 'mineral', hpMul: 2.2, valueMul: 2.2, units: 1, minToolTier: 0, color: '#8e8a86', sound: 'rock' },

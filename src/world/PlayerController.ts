@@ -28,7 +28,7 @@ export class PlayerController {
   readonly visualPos = new THREE.Vector3();
 
   constructor(private world: World) {
-    this.rig = buildHuman({ jacket: '#f07a2a', pants: '#3a3f4f', skin: '#ffd9a8', helmet: '#ffbd38', scarf: '#16cdbb', backpack: true });
+    this.rig = buildHuman({ jacket: '#f07a2a', pants: '#3a3f4f', skin: '#ffd9a8', helmet: '#ffbd38', scarf: '#16cdbb', backpack: true }, true);
     this.rig.root.scale.setScalar(MOVE.height / 2.0);
     this.lantern = new THREE.PointLight('#ffd27a', 0, 9, 1.4);
     this.lantern.position.set(0, 2.2, 0.6);

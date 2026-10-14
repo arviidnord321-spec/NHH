@@ -14,6 +14,7 @@ import type { PetInstance } from '../core/state';
 import type { Game } from '../Game';
 import type { Interactable } from '../world/World';
 import type { HatchOptions, HatchPhase } from './Showcase';
+import { UI_ART } from './assets';
 import {
   buildBackpackIcon, buildChest, buildCoinFace, buildTent, buildGemIcon, buildLanternTool, buildPickaxe, buildScanner, buildScrollIcon, buildShovel,
 } from '../world/models';
@@ -43,7 +44,6 @@ export class UIManager {
   private signalDepth = '';
   private scanMsgT = 0;
   private icons: Record<string, string> = {};
-  private menuOpen = false;
   private justOpened = false;
   private hudZoom = 1;
 
@@ -90,39 +90,39 @@ export class UIManager {
   // ───────── HUD ─────────
   private buildHud() {
     const h = this.hud;
+    const A = UI_ART;
     h.innerHTML = `
       <div class="tl">
-        <div class="pill coins" title="Coins"><img alt="" src="${this.icons.coin}"><span id="coins">0</span></div>
-        <div class="pill gems" title="Gems"><img alt="" src="${this.icons.gem}"><span id="gems">0</span></div>
+        <div class="bar9 pill coins" title="Coins" style="border-image-source:url(${A.coinBar})"><span id="coins">0</span></div>
+        <div class="bar9 pill gems" title="Gems" style="border-image-source:url(${A.gemBar})"><span id="gems">0</span></div>
       </div>
       <div class="tc">
-        <button class="quest" id="quest" aria-label="Open quests"><img alt="" src="${this.icons.quests}"><span class="qtext" id="qtext"></span><span class="qprog" id="qprog"></span><span class="qbar"><i id="qbar"></i></span></button>
+        <button class="bar9 quest" id="quest" aria-label="Open quests" style="border-image-source:url(${A.questBar})"><span class="qtext" id="qtext"></span><span class="qprog" id="qprog"></span><span class="qbar"><i id="qbar"></i></span></button>
         <div class="scan-hud hidden" id="scanhud"><div class="arrow" id="scanarrow">➤</div><div class="scan-info"><div id="scandepth"></div><div class="meter"><i id="scanmeter"></i></div></div></div>
       </div>
       <div class="tr">
-        <button class="icon-btn" id="btn-sound" aria-label="Toggle sound"></button>
-        <button class="icon-btn" id="btn-settings" aria-label="Settings">${SVG_GEAR}</button>
+        <button class="art-btn small" id="btn-sound" aria-label="Toggle sound"><img alt="" id="soundimg" src="${A.btnSoundOn}"></button>
+        <button class="art-btn small" id="btn-settings" aria-label="Settings"><img alt="" src="${A.btnSettings}"></button>
       </div>
       <div class="side" id="side">
-        <button class="menu-toggle" id="menutoggle" aria-label="Menu">☰</button>
         <div class="side-list">
-          <button class="side-btn b-pets" data-open="pets"><img alt="" src="${this.icons.pets}"><span>PETS</span></button>
-          <button class="side-btn b-eggs" data-open="eggs"><img alt="" src="${this.icons.eggs}"><span>EGGS</span></button>
-          <button class="side-btn b-upgrades" data-open="upgrades"><img alt="" src="${this.icons.upgrades}"><span>UPGRADES</span></button>
-          <button class="side-btn b-museum" data-open="museum"><img alt="" src="${this.icons.museum}"><span>MUSEUM</span></button>
-          <button class="side-btn b-quests" data-open="quests"><img alt="" src="${this.icons.quests}"><span>QUESTS</span></button>
+          <button class="art-btn menu" data-open="pets" aria-label="Pets"><img alt="" src="${A.btnPets}"><kbd>P</kbd></button>
+          <button class="art-btn menu" data-open="eggs" aria-label="Eggs"><img alt="" src="${A.btnEggs}"></button>
+          <button class="art-btn menu" data-open="upgrades" aria-label="Upgrades"><img alt="" src="${A.btnUpgrades}"></button>
+          <button class="art-btn menu" data-open="museum" aria-label="Museum"><img alt="" src="${A.btnMuseum}"></button>
+          <button class="art-btn menu" data-open="quests" aria-label="Quests"><img alt="" src="${A.btnQuests}"></button>
         </div>
       </div>
       <div class="bc">
         <div class="prompt hidden" id="prompt"><span id="prompttext"></span><i id="promptbar"></i></div>
         <button class="sell-quick hidden" id="sellquick"></button>
-        <div class="bagbar" id="bagbar"><img alt="" src="${this.icons.bag}"><b>BACKPACK</b><div class="bagfill"><i id="bagfill"></i></div><span id="bagtext">0 / 20</span></div>
+        <div class="bar9 bagbar" id="bagbar" style="border-image-source:url(${A.bagBar})"><div class="bagfill"><i id="bagfill"></i></div><span class="baglbl"><b>BACKPACK</b> <span id="bagtext">0 / 20</span></span></div>
         <div class="hotbar" id="hotbar">
-          ${['shovel', 'pickaxe', 'lantern', 'scanner'].map((k, i) => `<button class="slot" data-slot="${i}" aria-label="${k}"><kbd>${i + 1}</kbd><img alt="" id="icon-${k}" src="${this.icons[k]}"><span>${k[0].toUpperCase() + k.slice(1)}</span><i class="cd" id="cd-${k}"></i></button>`).join('')}
+          ${['Shovel', 'Pickaxe', 'Lantern', 'Scanner'].map((k, i) => `<button class="art-btn slot" data-slot="${i}" aria-label="${k}"><img alt="" class="slotimg" src="${A.slots[i].off}"><kbd>${i + 1}</kbd><span>${k}</span><i class="cd" id="cd-${k.toLowerCase()}"></i></button>`).join('')}
         </div>
       </div>
-      <button class="camp-btn" id="campbtn"><img alt="" src="${this.icons.tent}"><span class="lbl">RETURN TO CAMP</span><kbd>R</kbd></button>
-      <div class="target-card hidden" id="target"><b id="tname"></b><div class="hp"><i id="thp"></i></div><small id="tsub"></small></div>
+      <button class="bar9 camp-btn" id="campbtn" style="border-image-source:url(${A.campBtn})"><span class="lbl">RETURN TO CAMP</span><kbd>R</kbd></button>
+      <div class="target-card hidden" id="target" style="background-image:url(${A.targetCard})"><b id="tname"></b><div class="hp"><i id="thp"></i></div><small id="tsub"></small></div>
       <div class="hint hidden" id="hint"></div>
       <div class="banner hidden" id="banner"></div>
       <div class="toasts" id="toasts" aria-live="polite"></div>
@@ -132,7 +132,7 @@ export class UIManager {
       <div class="debug hidden" id="debug"></div>
       <div class="save-warn hidden" id="savewarn"></div>`;
     h.querySelectorAll<HTMLElement>('[id]').forEach((e) => (this.els[e.id] = e));
-    h.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => b.addEventListener('click', () => { this.menuOpen = false; this.els.side.classList.remove('open'); this.open(b.dataset.open as PanelName); }));
+    h.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => b.addEventListener('click', () => { this.open(b.dataset.open as PanelName); }));
     h.querySelectorAll<HTMLButtonElement>('[data-slot]').forEach((b) => b.addEventListener('click', () => this.g.selectTool(+b.dataset.slot!)));
     this.els.campbtn.addEventListener('click', () => this.g.returnToCamp());
     this.els['btn-settings'].addEventListener('click', () => this.open('settings'));
@@ -143,13 +143,12 @@ export class UIManager {
       this.g.persist();
     });
     this.els.quest.addEventListener('click', () => this.open('quests'));
-    this.els.menutoggle.addEventListener('click', () => { this.menuOpen = !this.menuOpen; this.els.side.classList.toggle('open', this.menuOpen); });
     this.els.sellquick.addEventListener('click', () => this.g.sell());
   }
 
   onResize() {
     const w = this.root.clientWidth || window.innerWidth, h = this.root.clientHeight || window.innerHeight;
-    const z = Math.max(0.5, Math.min(1.15, Math.min(w / 1400, h / 790)));
+    const z = Math.max(0.45, Math.min(1.15, Math.min(w / 1500, h / 800)));
     document.documentElement.style.setProperty('--hudz', z.toFixed(3));
     this.hudZoom = z;
   }
@@ -184,21 +183,19 @@ export class UIManager {
       this.els.qprog.textContent = missing ? `${L.relicCount(s, missing)}/3` : '';
       this.els.qbar.style.width = missing ? `${(L.relicCount(s, missing) / 3) * 100}%` : '100%';
     }
-    const soundSvg = this.g.audio.muted ? SVG_MUTED : SVG_SOUND;
-    if (this.els['btn-sound'].dataset.svg !== String(this.g.audio.muted)) { this.els['btn-sound'].dataset.svg = String(this.g.audio.muted); this.els['btn-sound'].innerHTML = soundSvg; }
+    const snd = this.g.audio.muted ? UI_ART.btnSoundOff : UI_ART.btnSoundOn;
+    if (this.els.soundimg.getAttribute('src') !== snd) (this.els.soundimg as HTMLImageElement).src = snd;
     this.els['btn-sound'].setAttribute('aria-pressed', String(s.settings.muted));
     // hotbar
     const slots = this.els.hotbar.querySelectorAll<HTMLElement>('.slot');
     slots.forEach((el, i) => {
-      el.classList.toggle('active', i === this.g.selectedSlot || (i === 2 && this.g.player.lanternOn));
+      const on = i === this.g.selectedSlot || (i === 2 && this.g.player.lanternOn);
+      el.classList.toggle('active', on);
       el.classList.toggle('locked', (i === 1 && !s.hasPickaxe) || (i === 2 && !s.hasLantern));
+      const img = el.querySelector('img') as HTMLImageElement;
+      const src = on ? UI_ART.slots[i].on : UI_ART.slots[i].off;
+      if (img.getAttribute('src') !== src) img.src = src;
     });
-    const shovelKey = `shovel${s.toolTier}`;
-    if (this.els['icon-shovel'].dataset.key !== shovelKey) {
-      this.els['icon-shovel'].dataset.key = shovelKey;
-      (this.els['icon-shovel'] as HTMLImageElement).src = this.g.showcase.iconOf(shovelKey, () => { const o = buildShovel(s.toolTier); o.rotation.z = 0.7; const w = new THREE.Group(); w.add(o); o.position.y = 0.4; return w; }, 3.2, 0.1, 96, 0.4);
-      (this.els['icon-pickaxe'] as HTMLImageElement).src = this.g.showcase.iconOf(`pick${s.toolTier}`, () => { const o = buildPickaxe(s.toolTier); o.rotation.z = -0.6; const w = new THREE.Group(); w.add(o); o.position.y = 0.7; return w; }, 3.0, 0.1, 96, 0.9);
-    }
     this.updateHint();
     if (this.panel && !this.hatchActive) this.render();
   }
@@ -970,10 +967,6 @@ export class UIManager {
     }
   }
 }
-
-const SVG_SOUND = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
-const SVG_MUTED = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l6 6M22 9l-6 6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
-const SVG_GEAR = '<svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7c.1.6.1 1.3 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a6 6 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z" transform="translate(0 1)"/></svg>';
 
 function div(cls: string) {
   const d = document.createElement('div');

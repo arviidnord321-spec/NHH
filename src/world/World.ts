@@ -180,11 +180,12 @@ export class World {
     this.scene.add(sky);
     this.scene.userData.sky = sky;
     // chunky clouds
-    const cm = lam('#ffffff');
+    const cm = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#c8dcf0', emissiveIntensity: 0.55 });
     for (let i = 0; i < 10; i++) {
       const c = new THREE.Group();
       const n = 3 + (i % 3);
-      for (let k = 0; k < n; k++) add(c, rb(4 + (k % 2) * 2, 1.6 + (k % 2), 3, 0.6), cm, k * 2.4 - n, (k % 2) * 0.6, (k % 3) * 0.8, 0, 0, 0, false);
+      const puff = new THREE.IcosahedronGeometry(1, 2);
+      for (let k = 0; k < n; k++) add(c, puff, cm, k * 2.6 - n, (k % 2) * 0.9, (k % 3) * 0.8, 0, 0, 0, false).scale.setScalar(2.2 + (k % 2) * 1.1);
       c.position.set(-150 + i * 34, 38 + (i % 3) * 5, -120 + ((i * 53) % 240));
       this.clouds.push(c);
       this.scene.add(c);
@@ -230,23 +231,39 @@ export class World {
       const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
       return Math.hypot(x - (ax + dx * t), z - (az + dz * t));
     };
+    // colors are evaluated per vertex (shared by neighbouring tiles) so paths get
+    // soft organic edges and the grass has no tile seams
+    const vcache = new Map<number, THREE.Color>();
+    const hash = (x: number, z: number) => { const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453; return v - Math.floor(v); };
+    const vertexColor = (x: number, z: number) => {
+      const key = x * 100003 + z;
+      let c = vcache.get(key);
+      if (c) return c;
+      let d = Infinity;
+      for (const sg of segs) d = Math.min(d, distSeg(x, z, sg));
+      const wob = (hash(x * 0.37, z * 0.41) - 0.5) * 1.1;
+      const t = Math.min(1, Math.max(0, (d + wob - 1.1) / 1.4));
+      const grass = new THREE.Color().copy(g1).lerp(g2, hash(x, z)).multiplyScalar(0.96 + hash(z, x) * 0.08);
+      c = new THREE.Color().copy(pathC).multiplyScalar(0.95 + hash(x + 3, z) * 0.1).lerp(grass, t * t * (3 - 2 * t));
+      vcache.set(key, c);
+      return c;
+    };
+    void rng; void col;
     for (let x = cx - h; x < cx + h; x += T) {
       for (let z = cz - h; z < cz + h; z += T) {
-        if (this.inAnyFootprint(x + 0.5, z + 0.5) ) continue;
-        const mx = x + T / 2, mz = z + T / 2;
-        let isPath = false;
-        for (const s of segs) if (distSeg(mx, mz, s) < 1.7) { isPath = true; break; }
-        if (isPath) col.copy(pathC).multiplyScalar(0.94 + rng() * 0.1);
-        else col.copy(g1).lerp(g2, rng()).multiplyScalar(0.96 + rng() * 0.08);
+        if (this.inAnyFootprint(x + 0.5, z + 0.5)) continue;
         const quad = [[x, z], [x, z + T], [x + T, z + T], [x, z], [x + T, z + T], [x + T, z]];
-        for (const [qx, qz] of quad) { P.push(qx, 0, qz); C.push(col.r, col.g, col.b); N.push(0, 1, 0); }
+        for (const [qx, qz] of quad) { const vc = vertexColor(qx, qz); P.push(qx, 0, qz); C.push(vc.r, vc.g, vc.b); N.push(0, 1, 0); }
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
-    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const U: number[] = [];
+    for (let i = 0; i < P.length; i += 3) U.push(P[i] / 3.5, P[i + 2] / 3.5);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2));
+    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTexture() }));
     ground.receiveShadow = true;
     this.biomeGroups[b].add(ground);
   }
@@ -306,14 +323,18 @@ export class World {
     outer.holes.push(hole);
     const geo = new THREE.ShapeGeometry(outer);
     geo.rotateX(-Math.PI / 2);
-    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: '#5aa832' }));
+    const gp = geo.attributes.position;
+    const gu: number[] = [];
+    for (let i = 0; i < gp.count; i++) gu.push(gp.getX(i) / 3.5, gp.getZ(i) / 3.5);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(gu, 2));
+    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: '#66b83c', map: groundTexture() }));
     ground.position.y = -0.03;
     ground.receiveShadow = false;
     this.scene.add(ground);
     const g = new THREE.Group();
     const rng = mulberry32(4242);
     // forest band just beyond the ledges
-    for (let i = 0; i < 160; i++) {
+    for (let i = 0; i < 95; i++) {
       const a = rng() * Math.PI * 2, r = 135 + rng() * 60;
       let x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (i < 70) { // also hug the meadow's outer edges
@@ -487,8 +508,8 @@ export class World {
     this.biomeGroups[b].add(mesh);
     if (b === 'meadow') {
       // daisies: petals + golden centre share instance transforms
-      const petals = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 7), new THREE.MeshLambertMaterial({ color: '#ffffff' }), 520);
-      const centers = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 6, 4), new THREE.MeshLambertMaterial({ color: '#ffc928' }), 520);
+      const petals = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 6, 1), new THREE.MeshLambertMaterial({ color: '#ffffff' }), 520);
+      const centers = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 5, 3), new THREE.MeshLambertMaterial({ color: '#ffc928' }), 520);
       const fc = [new THREE.Color('#ffffff'), new THREE.Color('#ffffff'), new THREE.Color('#ff9ad0'), new THREE.Color('#ffe36a'), new THREE.Color('#c9a8ff')];
       let fn = 0;
       for (let i = 0; i < 520; i++) {
@@ -1250,4 +1271,42 @@ export function mergeStatic(group: THREE.Group, chunk = 32): THREE.Group {
     out.add(s);
   }
   return out;
+}
+
+let groundTex: THREE.Texture | null = null;
+/** Tileable painted-grass detail map (multiplies the per-tile vertex colors). */
+export function groundTexture(): THREE.Texture {
+  if (groundTex) return groundTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgb(232,232,232)';
+  g.fillRect(0, 0, 256, 256);
+  const rnd = mulberry32(99);
+  const blot = (x: number, y: number, r: number, col: string) => {
+    for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      gr.addColorStop(0, col);
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr;
+      g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+    }
+  };
+  for (let i = 0; i < 26; i++) blot(rnd() * 256, rnd() * 256, 20 + rnd() * 50, rnd() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(150,150,150,0.28)');
+  // tiny blade strokes
+  for (let i = 0; i < 1400; i++) {
+    const x = rnd() * 256, y = rnd() * 256, l = 2 + rnd() * 4;
+    const v = rnd() < 0.55 ? 255 : 175;
+    g.strokeStyle = `rgba(${v},${v},${v},${0.25 + rnd() * 0.35})`;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (rnd() - 0.5) * 2, y - l);
+    g.stroke();
+  }
+  groundTex = new THREE.CanvasTexture(c);
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+  groundTex.colorSpace = THREE.SRGBColorSpace;
+  groundTex.anisotropy = 4;
+  return groundTex;
 }

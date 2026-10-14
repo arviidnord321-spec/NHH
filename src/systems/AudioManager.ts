@@ -20,7 +20,6 @@ export class AudioManager {
   private platformMuted = false;
   private suspendedByPause = false;
   private vol = { master: 0.8, music: 0.45, sfx: 0.8 };
-  private musicTimer = 0;
   private musicStep = 0;
   private biome = 'meadow';
   private ambFilter: BiquadFilterNode | null = null;
@@ -74,7 +73,7 @@ export class AudioManager {
     const m = this.muted ? 0 : this.vol.master;
     this.master.gain.setTargetAtTime(m, t, 0.05);
     this.sfxBus.gain.setTargetAtTime(this.vol.sfx, t, 0.05);
-    this.musicBus.gain.setTargetAtTime(this.vol.music * 0.35, t, 0.05);
+    this.musicBus.gain.setTargetAtTime(this.vol.music * 0.9, t, 0.05);
     this.ambBus.gain.setTargetAtTime(this.vol.sfx * 0.18, t, 0.05);
   }
 
@@ -102,13 +101,18 @@ export class AudioManager {
     this.ambFilter = f;
   }
 
-  /** Per-frame: schedule generative music + occasional ambience accents. */
+  /** Per-frame: schedule the lo-fi music ahead of time + ambience accents. */
   update(dt: number) {
     if (!this.ready) return;
-    this.musicTimer -= dt;
-    if (this.musicTimer <= 0) {
-      this.musicTimer = 0.42;
-      this.musicNote();
+    const c = this.ctx!;
+    if (!this.musicIn) this.buildMusicChain();
+    if (this.nextStepTime < c.currentTime) this.nextStepTime = c.currentTime + 0.05;
+    while (this.nextStepTime < c.currentTime + 0.25) {
+      this.musicStepAt(this.musicStep, this.nextStepTime);
+      // swung 8ths at ~76 BPM
+      const eighth = 60 / 76 / 2;
+      this.nextStepTime += this.musicStep % 2 === 0 ? eighth * 1.16 : eighth * 0.84;
+      this.musicStep++;
     }
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
@@ -118,28 +122,152 @@ export class AudioManager {
     }
   }
 
-  private musicNote() {
-    const scales: Record<string, number[]> = {
-      meadow: [0, 2, 4, 7, 9, 12, 14],
-      crystal: [0, 3, 5, 7, 10, 12, 15],
-      ember: [0, 1, 5, 7, 8, 12, 13],
-      aurora: [0, 2, 5, 7, 9, 12, 17],
-    };
-    const root = this.biome === 'ember' ? 196 : this.biome === 'aurora' ? 220 : this.biome === 'crystal' ? 233 : 262;
-    const sc = scales[this.biome] ?? scales.meadow;
-    const step = this.musicStep++;
-    const bar = Math.floor(step / 8) % 4;
-    const chordRoots = [0, 5, 3, 4];
-    if (step % 8 === 0) {
-      const base = root / 2 * Math.pow(2, sc[chordRoots[bar] % sc.length] / 12);
-      this.tone(base, 3.0, 'triangle', 0.09, this.musicBus, 0.4);
-      this.tone(base * 1.5, 3.0, 'sine', 0.05, this.musicBus, 0.6);
+  // ───────── lo-fi music ─────────
+  private musicIn: GainNode | null = null;
+  private nextStepTime = 0;
+
+  /** music bus → warm low-pass → dry + small generated-impulse reverb; plus faint vinyl crackle */
+  private buildMusicChain() {
+    const c = this.ctx!;
+    const input = c.createGain();
+    const warm = c.createBiquadFilter();
+    warm.type = 'lowpass';
+    warm.frequency.value = 2600;
+    warm.Q.value = 0.4;
+    input.connect(warm);
+    warm.connect(this.musicBus);
+    const len = Math.floor(c.sampleRate * 2.4);
+    const ir = c.createBuffer(2, len, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = ir.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
     }
-    if (Math.random() < 0.62) {
-      const n = sc[(step * 3 + bar * 2 + Math.floor(Math.random() * 3)) % sc.length];
-      this.tone(root * Math.pow(2, n / 12), 0.5, 'sine', 0.07, this.musicBus, 0.01);
+    const verb = c.createConvolver();
+    verb.buffer = ir;
+    const wet = c.createGain();
+    wet.gain.value = 0.32;
+    warm.connect(verb).connect(wet).connect(this.musicBus);
+    // vinyl crackle: sparse clicks through a band-pass
+    const cl = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+    const cd = cl.getChannelData(0);
+    for (let i = 0; i < cd.length; i++) cd[i] = Math.random() < 0.0009 ? (Math.random() * 2 - 1) * 0.8 : (Math.random() * 2 - 1) * 0.012;
+    const crackle = c.createBufferSource();
+    crackle.buffer = cl;
+    crackle.loop = true;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 3200;
+    const cg = c.createGain();
+    cg.gain.value = 0.18;
+    crackle.connect(bp).connect(cg).connect(this.musicBus);
+    crackle.start();
+    this.musicIn = input;
+  }
+
+  private static readonly PROG: Record<string, { root: number; chords: number[][]; scale: number[] }> = {
+    // semitone offsets from root; 4 bars of 7th chords
+    meadow: { root: 57, chords: [[5, 9, 12, 16], [4, 7, 11, 14], [2, 5, 9, 12], [0, 4, 7, 11]], scale: [0, 2, 4, 7, 9] },
+    crystal: { root: 55, chords: [[0, 3, 7, 10], [5, 8, 12, 15], [3, 7, 10, 14], [8, 12, 15, 19]], scale: [0, 3, 5, 7, 10] },
+    ember: { root: 52, chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [-2, 2, 5, 9], [-5, -1, 2, 5]], scale: [0, 3, 5, 7, 10] },
+    aurora: { root: 59, chords: [[0, 4, 7, 11], [9, 12, 16, 19], [5, 9, 12, 16], [7, 11, 14, 17]], scale: [0, 2, 4, 7, 9] },
+  };
+
+  private midi(n: number) { return 440 * Math.pow(2, (n - 69) / 12); }
+
+  private musicStepAt(step: number, t: number) {
+    const P = AudioManager.PROG[this.biome] ?? AudioManager.PROG.meadow;
+    const bar = Math.floor(step / 8) % 4;
+    const pos = step % 8;
+    const chord = P.chords[bar];
+    const base = P.root - 12;
+    if (pos === 0) {
+      // soft electric-piano chord, gently strummed
+      chord.forEach((n, i) => this.keys(this.midi(base + 12 + n), t + i * 0.025, 3.0, 0.05));
+      this.bass(this.midi(base - 12 + chord[0]), t, 1.4, 0.16);
+    }
+    if (pos === 4) {
+      this.bass(this.midi(base - 12 + chord[0] + (bar % 2 ? 7 : 0)), t, 1.0, 0.12);
+      if (Math.random() < 0.5) chord.slice(1).forEach((n, i) => this.keys(this.midi(base + 12 + n), t + i * 0.03, 1.6, 0.03));
+    }
+    // drums: kick on 1 & 3, brush on 2 & 4, quiet hats
+    if (pos === 0 || pos === 4 || (pos === 7 && Math.random() < 0.25)) this.kick(t, pos === 7 ? 0.25 : 0.42);
+    if (pos === 2 || pos === 6) this.brush(t, 0.14);
+    this.hat(t, pos % 2 ? 0.035 : 0.055);
+    // sparse pentatonic melody with an echo
+    if ((pos === 1 || pos === 3 || pos === 6) && Math.random() < 0.38) {
+      const deg = P.scale[Math.floor(Math.random() * P.scale.length)];
+      const f = this.midi(P.root + 12 + deg + (Math.random() < 0.3 ? 12 : 0));
+      this.lead(f, t, 0.045);
+      this.lead(f, t + 0.395 * 1.5, 0.018);
     }
   }
+
+  private env(g: GainNode, t: number, a: number, peak: number, dur: number) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  }
+
+  private keys(f: number, t: number, dur: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.012, vol, dur);
+    const o1 = c.createOscillator(); o1.type = 'sine'; o1.frequency.value = f;
+    const o2 = c.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 2.001;
+    const g2 = c.createGain(); g2.gain.value = 0.18;
+    const trem = c.createOscillator(); trem.frequency.value = 4.5;
+    const tg = c.createGain(); tg.gain.value = vol * 0.25;
+    trem.connect(tg).connect(g.gain);
+    o1.connect(g); o2.connect(g2).connect(g);
+    g.connect(this.musicIn!);
+    for (const o of [o1, o2, trem]) { o.start(t); o.stop(t + dur + 0.05); }
+  }
+
+  private bass(f: number, t: number, dur: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.02, vol, dur);
+    const o = c.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+    o.connect(g).connect(this.musicIn!);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  private lead(f: number, t: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.01, vol, 0.9);
+    const o = c.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+    const vib = c.createOscillator(); vib.frequency.value = 5;
+    const vg = c.createGain(); vg.gain.value = f * 0.004;
+    vib.connect(vg).connect(o.frequency);
+    o.connect(g).connect(this.musicIn!);
+    for (const x of [o, vib]) { x.start(t); x.stop(t + 1); }
+  }
+
+  private kick(t: number, vol: number) {
+    const c = this.ctx!;
+    const g = c.createGain();
+    this.env(g, t, 0.004, vol, 0.32);
+    const o = c.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(44, t + 0.18);
+    o.connect(g).connect(this.musicIn!);
+    o.start(t); o.stop(t + 0.35);
+  }
+
+  private noiseHit(t: number, vol: number, dur: number, type: BiquadFilterType, freq: number) {
+    const c = this.ctx!;
+    const src = c.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+    const g = c.createGain();
+    this.env(g, t, 0.006, vol, dur);
+    src.connect(f).connect(g).connect(this.musicIn!);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + dur + 0.02);
+  }
+  private brush(t: number, vol: number) { this.noiseHit(t, vol, 0.22, 'bandpass', 1900); }
+  private hat(t: number, vol: number) { this.noiseHit(t, vol, 0.05, 'highpass', 7500); }
 
   private chirp() {
     const c = this.ctx!;
